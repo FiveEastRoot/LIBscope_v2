@@ -759,7 +759,7 @@ exports.handler = async (event, context) => {
 
       // 장애 유형 비율 구성 파싱
       const disability = {};
-      const disabilityCols = ['지체', '뇌병변', '시각', '청각', '지적', '기타장애'];
+      const disabilityCols = ['지체', '뇌병변', '시각', '청각', '지적', '정신', '언어', '자폐성', '기타장애'];
       disabilityCols.forEach(col => {
         const val = parseFloat(guCombined[col] || 0);
         if (val > 0) disability[col] = val;
@@ -767,10 +767,15 @@ exports.handler = async (event, context) => {
 
       // 가구원수 비율 구성 파싱
       const householdTypes = {};
-      const houseCols = ['1인가구', '2인가구', '3인가구', '4인이상가구'];
-      houseCols.forEach(col => {
+      const houseCols = [
+        ['1인가구', '1인가구'],
+        ['2인가구', '2인가구'],
+        ['3인 이상 가구', '3인이상가구'],
+        ['5인 이상 가구', '5인이상가구']
+      ];
+      houseCols.forEach(([col, label]) => {
         const val = parseFloat(guCombined[col] || 0);
-        if (val > 0) householdTypes[col] = val;
+        if (val > 0) householdTypes[label] = val;
       });
 
       // 3) 실시간 초·중·고교 인프라 API 연동 (neisSchoolInfo) + 대학교 API 연동 (SebcCollegeInfoKor)
@@ -919,6 +924,11 @@ exports.handler = async (event, context) => {
         () => supabaseMetrics.fetchDistrictWelfare(gu),
         () => null
       );
+      const supabaseSocialIndicators = await withSupabaseFallback(
+        `district social safety composition ${gu}`,
+        () => supabaseMetrics.fetchDistrictSocialIndicators(gu),
+        () => null
+      );
 
       const responseData = {
         gu,
@@ -937,12 +947,15 @@ exports.handler = async (event, context) => {
           seoulAvgRecipientRate: parseFloat(seoulAvgRecipientRate.toFixed(3)),
           denominator: 'resident_population'
         },
-        socialIndicators: {
+        socialIndicators: supabaseSocialIndicators || {
           multicultural,
           disability,
           householdTypes,
           onePersonCount: parseInt(guCombined['1인가구'] || 0),
-          seoulAvgOnePerson: Math.round(seoulAvgOnePerson)
+          seoulAvgOnePerson: Math.round(seoulAvgOnePerson),
+          source: 'csv_social_safety_fallback',
+          sourceLabel: '서울시 자치구 통계 CSV fallback',
+          referenceDate: null
         },
         cultureAndEducation: {
           schools: schoolStats,

@@ -382,6 +382,21 @@ function App() {
     return population.source;
   };
 
+  const getSocialIndicatorSourceLabel = (socialIndicators) => {
+    if (!socialIndicators) return '사회안전망 구성 데이터';
+    const dateText = formatPopulationSourceDate(socialIndicators.referenceDate);
+    if (socialIndicators.sourceLabel) {
+      return dateText ? `${socialIndicators.sourceLabel} (기준 ${dateText})` : socialIndicators.sourceLabel;
+    }
+    if (socialIndicators.source === 'kosis_social_safety_composition') {
+      return dateText ? `KOSIS 사회안전망 구성 (기준 ${dateText})` : 'KOSIS 사회안전망 구성';
+    }
+    if (socialIndicators.source === 'csv_social_safety_fallback') {
+      return '서울시 자치구 통계 (CSV 백업)';
+    }
+    return socialIndicators.source || '사회안전망 구성 데이터';
+  };
+
   const getPopulationByMode = (population) => {
     if (!population) return null;
     return population.modes?.[populationMode] || population;
@@ -608,7 +623,7 @@ function App() {
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
               <div className="flex justify-between items-center mb-6">
                 <h4 className="font-extrabold text-lg text-slate-800">🌐 사회안전망 대상자 유형 분석 (100% 누적 가구/장애/외국인 주민 구성)</h4>
-                <span className="text-[10px] text-slate-400 font-medium">출처: 서울시 자치구 통계 (BOM 백업)</span>
+                <span className="text-[10px] text-slate-400 font-medium">출처: {getSocialIndicatorSourceLabel(districtData.socialIndicators)}</span>
               </div>
               
               <div className="space-y-8">
@@ -627,7 +642,7 @@ function App() {
                 </div>
 
                 <div>
-                  <h5 className="text-sm font-bold text-slate-500 mb-2">🌍 외국인 주민 국적 비율 (상위 국가군)</h5>
+                  <h5 className="text-sm font-bold text-slate-500 mb-2">🌍 외국인 주민 유형 구성</h5>
                   <div className="h-28">
                     <ReactECharts option={getStackedBarOption('외국인 주민', districtData.socialIndicators.multicultural)} style={{ height: '100%' }} />
                   </div>

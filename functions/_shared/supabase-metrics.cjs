@@ -142,6 +142,29 @@ async function fetchDistrictWelfare(gu) {
   };
 }
 
+async function fetchDistrictSocialIndicators(gu) {
+  const rows = await supabaseFetch('district_metrics', {
+    select: 'metric_json,reference_date',
+    gu: `eq.${gu}`,
+    metric_key: 'eq.social_safety_composition',
+    order: 'reference_date.desc.nullslast,fetched_at.desc',
+    limit: '1'
+  });
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const metric = rows[0].metric_json || {};
+  return {
+    multicultural: metric.multicultural || metric.foreignResidents || {},
+    disability: metric.disability || {},
+    householdTypes: metric.householdTypes || {},
+    onePersonCount: Number(metric.onePersonCount || 0),
+    seoulAvgOnePerson: Number(metric.seoulAvgOnePerson || 0),
+    source: metric.source || 'supabase_social_safety_composition',
+    sourceLabel: metric.sourceLabel || 'Supabase 사회안전망 구성',
+    referenceDate: metric.referenceDate || rows[0].reference_date || null
+  };
+}
+
 async function fetchLibraryWelfare(dongs = []) {
   if (!dongs.length) return null;
   const quoted = dongs.map(dong => `"${String(dong).replace(/"/g, '\\"')}"`).join(',');
@@ -181,5 +204,6 @@ module.exports = {
   fetchDistrictResidentPopulation,
   fetchLibraryResidentPopulation,
   fetchDistrictWelfare,
+  fetchDistrictSocialIndicators,
   fetchLibraryWelfare
 };

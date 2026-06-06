@@ -13,6 +13,82 @@ const KOSIS_TABLE = {
   femaleItemId: 'T4',
   totalAgeCode: '0'
 };
+const KOSIS_SOCIAL_TABLES = {
+  household: {
+    orgId: '101',
+    tblId: 'DT_1JC1516',
+    sourceKey: 'household_composition_kosis',
+    itemIds: ['T10', 'T21', 'T22', 'T23', 'T24', 'T25', 'T26', 'T27', 'T30'],
+    totalItemId: 'T10',
+    onePersonItemId: 'T21'
+  },
+  disability: {
+    orgId: '101',
+    tblId: 'DT_1DP2041',
+    sourceKey: 'disability_composition_kosis',
+    totalItemId: 'T1'
+  },
+  foreignResidents: {
+    orgId: '110',
+    tblId: 'TX_11025_A001_A',
+    sourceKey: 'foreign_resident_composition_kosis',
+    itemId: '16110AAA0',
+    genderTotalCode: 'C001',
+    categoryCodes: [
+      '15110AA0ADAA',
+      '15110AA0ADAK',
+      '15110AA0ADAC',
+      '15110AA0ADAL',
+      '15110AA0ADAD',
+      '15110AA0AF',
+      '15110AA0AM'
+    ],
+    totalCode: '15110AA000'
+  }
+};
+
+const SOURCE_CATALOG_ROWS = [
+  {
+    source_key: 'household_composition_kosis',
+    provider: 'KOSIS',
+    dataset_id: 'DT_1JC1516',
+    service_name: '세대구성 및 가구원수별 가구(일반가구) - 시군구',
+    source_url: 'https://kosis.kr/openapi/Param/statisticsParameterData.do?orgId=101&tblId=DT_1JC1516',
+    refresh_cycle: 'annual',
+    notes: 'KOSIS OpenAPI',
+    status: 'active'
+  },
+  {
+    source_key: 'disability_composition_kosis',
+    provider: 'KOSIS',
+    dataset_id: 'DT_1DP2041',
+    service_name: '장애유형 및 장애정도별 장애인 인구 - 시군구',
+    source_url: 'https://kosis.kr/openapi/Param/statisticsParameterData.do?orgId=101&tblId=DT_1DP2041',
+    refresh_cycle: 'annual',
+    notes: 'KOSIS OpenAPI',
+    status: 'active'
+  },
+  {
+    source_key: 'foreign_resident_composition_kosis',
+    provider: 'KOSIS',
+    dataset_id: 'TX_11025_A001_A',
+    service_name: '시군구별 외국인주민 현황',
+    source_url: 'https://kosis.kr/openapi/Param/statisticsParameterData.do?orgId=110&tblId=TX_11025_A001_A',
+    refresh_cycle: 'annual',
+    notes: 'KOSIS OpenAPI / 행정안전부 지방자치단체 외국인주민현황',
+    status: 'active'
+  },
+  {
+    source_key: 'social_safety_csv',
+    provider: 'local_csv',
+    dataset_id: 'district_data_combined.csv',
+    service_name: '사회안전망 구성 CSV fallback',
+    source_url: 'district_data_combined.csv',
+    refresh_cycle: 'manual',
+    notes: 'Legacy static fallback',
+    status: 'fallback'
+  }
+];
 
 function loadLocalEnv() {
   const envPath = path.resolve(ROOT_DIR, '.env');
@@ -139,6 +215,45 @@ async function fetchKosisMeta(type) {
     orgId: KOSIS_TABLE.orgId,
     tblId: KOSIS_TABLE.tblId
   });
+}
+
+async function fetchKosisMetaFor(table, type) {
+  return fetchKosisJson('https://kosis.kr/openapi/statisticsData.do', {
+    method: 'getMeta',
+    apiKey: process.env.KOSIS_API_KEY,
+    format: 'json',
+    jsonVD: 'Y',
+    type,
+    orgId: table.orgId,
+    tblId: table.tblId
+  });
+}
+
+async function fetchKosisRows(table, params) {
+  const data = await fetchKosisJson('https://kosis.kr/openapi/Param/statisticsParameterData.do', {
+    method: 'getList',
+    apiKey: process.env.KOSIS_API_KEY,
+    format: 'json',
+    jsonVD: 'Y',
+    orgId: table.orgId,
+    tblId: table.tblId,
+    ...params
+  });
+  if (!Array.isArray(data)) {
+    throw new Error(`Unexpected KOSIS data shape for ${table.tblId}: ${JSON.stringify(data).slice(0, 300)}`);
+  }
+  return data;
+}
+
+function latestAnnualPeriod(periodMeta) {
+  const latest = [...periodMeta]
+    .filter(row => (row.PRD_SE === '년' || row.PRD_SE === 'A') && row.END_PRD_DE)
+    .sort((a, b) => String(b.END_PRD_DE).localeCompare(String(a.END_PRD_DE)))[0];
+  return String(latest?.END_PRD_DE || '');
+}
+
+function annualReferenceDate(period) {
+  return /^\d{4}$/.test(String(period || '')) ? `${period}-01-01` : null;
 }
 
 async function fetchKosisResidentRows({ adminCodes, ageCodes, period }) {
@@ -342,6 +457,237 @@ function buildDistrictWelfareRows() {
   }));
 }
 
+function topGuItems(itemMeta, objId = 'A', parentId = '11') {
+  return itemMeta.filter(row => row.OBJ_ID === objId && row.UP_ITM_ID === parentId);
+}
+
+async function fetchHouseholdComposition() {
+  const table = KOSIS_SOCIAL_TABLES.household;
+  const [periodMeta, itemMeta] = await Promise.all([
+    fetchKosisMetaFor(table, 'PRD'),
+    fetchKosisMetaFor(table, 'ITM')
+  ]);
+  const period = latestAnnualPeriod(periodMeta);
+  const guItems = topGuItems(itemMeta, 'A');
+  const rows = [];
+  for (const adminChunk of chunk(guItems.map(row => row.ITM_ID), 25)) {
+    rows.push(...await fetchKosisRows(table, {
+      itmId: table.itemIds.join('+'),
+      objL1: adminChunk.join('+'),
+      objL2: '00',
+      prdSe: 'Y',
+      startPrdDe: period,
+      endPrdDe: period
+    }));
+  }
+
+  const byGu = new Map();
+  rows.forEach(row => {
+    const metric = byGu.get(row.C1_NM) || {
+      householdTypes: {},
+      totalHouseholds: 0,
+      averageHouseholdSize: 0
+    };
+    const value = number(row.DT);
+    if (row.ITM_ID === 'T10') metric.totalHouseholds = value;
+    if (row.ITM_ID === 'T21') metric.householdTypes['1인가구'] = value;
+    if (row.ITM_ID === 'T22') metric.householdTypes['2인가구'] = value;
+    if (row.ITM_ID === 'T23') metric.householdTypes['3인가구'] = value;
+    if (row.ITM_ID === 'T24') metric.householdTypes['4인가구'] = value;
+    if (['T25', 'T26', 'T27'].includes(row.ITM_ID)) {
+      metric.householdTypes['5인이상가구'] = (metric.householdTypes['5인이상가구'] || 0) + value;
+    }
+    if (row.ITM_ID === 'T30') metric.averageHouseholdSize = value;
+    byGu.set(row.C1_NM, metric);
+  });
+
+  const onePersonValues = [...byGu.values()].map(metric => metric.householdTypes['1인가구'] || 0);
+  const seoulAvgOnePerson = Math.round(onePersonValues.reduce((sum, value) => sum + value, 0) / (onePersonValues.length || 1));
+  return { byGu, period, referenceDate: annualReferenceDate(period), seoulAvgOnePerson };
+}
+
+async function fetchDisabilityComposition() {
+  const table = KOSIS_SOCIAL_TABLES.disability;
+  const [periodMeta, itemMeta] = await Promise.all([
+    fetchKosisMetaFor(table, 'PRD'),
+    fetchKosisMetaFor(table, 'ITM')
+  ]);
+  const period = latestAnnualPeriod(periodMeta);
+  const guItems = topGuItems(itemMeta, 'SGG');
+  const typeCodes = itemMeta
+    .filter(row => row.OBJ_ID === 'A' && row.ITM_ID !== '000')
+    .map(row => row.ITM_ID);
+  const rows = [];
+  for (const adminChunk of chunk(guItems.map(row => row.ITM_ID), 25)) {
+    rows.push(...await fetchKosisRows(table, {
+      itmId: table.totalItemId,
+      objL1: adminChunk.join('+'),
+      objL2: typeCodes.join('+'),
+      prdSe: 'Y',
+      startPrdDe: period,
+      endPrdDe: period
+    }));
+  }
+
+  const byGu = new Map();
+  rows.forEach(row => {
+    const metric = byGu.get(row.C1_NM) || { disability: {}, totalDisabled: 0 };
+    const value = number(row.DT);
+    if (row.C2_NM && value > 0) {
+      metric.disability[row.C2_NM] = value;
+      metric.totalDisabled += value;
+    }
+    byGu.set(row.C1_NM, metric);
+  });
+  return { byGu, period, referenceDate: annualReferenceDate(period) };
+}
+
+async function fetchForeignResidentComposition() {
+  const table = KOSIS_SOCIAL_TABLES.foreignResidents;
+  const [periodMeta, itemMeta] = await Promise.all([
+    fetchKosisMetaFor(table, 'PRD'),
+    fetchKosisMetaFor(table, 'ITM')
+  ]);
+  const period = latestAnnualPeriod(periodMeta);
+  const guItems = topGuItems(itemMeta, '11101HJG', '11101HJG11');
+  const rows = [];
+  const categoryCodes = [table.totalCode, ...table.categoryCodes];
+  for (const adminChunk of chunk(guItems.map(row => row.ITM_ID), 25)) {
+    rows.push(...await fetchKosisRows(table, {
+      itmId: table.itemId,
+      objL1: adminChunk.join('+'),
+      objL2: categoryCodes.join('+'),
+      objL3: table.genderTotalCode,
+      prdSe: 'Y',
+      startPrdDe: period,
+      endPrdDe: period
+    }));
+  }
+
+  const byGu = new Map();
+  rows.forEach(row => {
+    const metric = byGu.get(row.C1_NM) || { foreignResidents: {}, totalForeignResidents: 0 };
+    const value = number(row.DT);
+    if (row.C2 === table.totalCode) metric.totalForeignResidents = value;
+    else if (row.C2_NM && value > 0) metric.foreignResidents[row.C2_NM.replace('한국국적을 취득한 자', '한국국적취득자')] = value;
+    byGu.set(row.C1_NM, metric);
+  });
+  return { byGu, period, referenceDate: annualReferenceDate(period) };
+}
+
+function buildDistrictSocialRowsFromCsv() {
+  const rows = readCSV('district_data_combined.csv');
+  const onePersonValues = rows.map(row => number(row['1인가구']));
+  const seoulAvgOnePerson = Math.round(onePersonValues.reduce((sum, value) => sum + value, 0) / (onePersonValues.length || 1));
+
+  return rows.map(row => {
+    const multicultural = {};
+    const multiculturalCols = Object.keys(row).filter(key => key.startsWith('국적_') || [
+      '중국', '한국계중국인', '베트남', '미국', '대만', '일본', '필리핀', '기타국적'
+    ].includes(key));
+    multiculturalCols.forEach(col => {
+      const value = number(row[col]);
+      if (value > 0) multicultural[col] = value;
+    });
+
+    const disability = {};
+    ['지체', '뇌병변', '시각', '청각', '지적', '정신', '언어', '자폐성', '기타장애'].forEach(col => {
+      const value = number(row[col]);
+      if (value > 0) disability[col] = value;
+    });
+
+    const householdTypes = {};
+    [
+      ['1인가구', '1인가구'],
+      ['2인가구', '2인가구'],
+      ['3인 이상 가구', '3인이상가구'],
+      ['5인 이상 가구', '5인이상가구']
+    ].forEach(([col, label]) => {
+      const value = number(row[col]);
+      if (value > 0) householdTypes[label] = value;
+    });
+
+    const metric = {
+      householdTypes,
+      disability,
+      multicultural,
+      onePersonCount: number(row['1인가구']),
+      seoulAvgOnePerson,
+      source: 'csv_social_safety_fallback',
+      sourceLabel: 'CSV fallback',
+      referenceDate: null
+    };
+    return {
+      gu: row['자치구'],
+      metric_key: 'social_safety_composition',
+      population_mode: null,
+      metric_value: Object.values(householdTypes).reduce((sum, value) => sum + value, 0),
+      metric_json: metric,
+      denominator_key: null,
+      reference_date: null,
+      source_key: 'social_safety_csv'
+    };
+  });
+}
+
+async function buildKosisSocialRows() {
+  if (!process.env.KOSIS_API_KEY) return null;
+
+  const [household, disability, foreignResidents] = await Promise.all([
+    fetchHouseholdComposition(),
+    fetchDisabilityComposition(),
+    fetchForeignResidentComposition()
+  ]);
+
+  const referenceDate = [household.referenceDate, disability.referenceDate, foreignResidents.referenceDate]
+    .filter(Boolean)
+    .sort()
+    .at(0);
+  const guNames = [...household.byGu.keys()].sort();
+  const rows = guNames.map(gu => {
+    const house = household.byGu.get(gu) || {};
+    const disabled = disability.byGu.get(gu) || {};
+    const foreign = foreignResidents.byGu.get(gu) || {};
+    const metric = {
+      householdTypes: house.householdTypes || {},
+      disability: disabled.disability || {},
+      multicultural: foreign.foreignResidents || {},
+      foreignResidents: foreign.foreignResidents || {},
+      onePersonCount: house.householdTypes?.['1인가구'] || 0,
+      seoulAvgOnePerson: household.seoulAvgOnePerson,
+      totalHouseholds: house.totalHouseholds || 0,
+      totalDisabled: disabled.totalDisabled || 0,
+      totalForeignResidents: foreign.totalForeignResidents || 0,
+      averageHouseholdSize: house.averageHouseholdSize || 0,
+      source: 'kosis_social_safety_composition',
+      sourceLabel: 'KOSIS 2024 가구/장애/외국인주민',
+      referenceDate,
+      periods: {
+        household: household.period,
+        disability: disability.period,
+        foreignResidents: foreignResidents.period
+      }
+    };
+
+    return {
+      gu,
+      metric_key: 'social_safety_composition',
+      population_mode: null,
+      metric_value: metric.totalHouseholds,
+      metric_json: metric,
+      denominator_key: null,
+      reference_date: referenceDate,
+      source_key: 'household_composition_kosis'
+    };
+  });
+
+  if (rows.length !== 25) {
+    throw new Error(`Unexpected KOSIS social composition row count: ${rows.length}`);
+  }
+  console.log(`Loaded KOSIS social safety composition: ${rows.length} districts.`);
+  return rows;
+}
+
 function buildDongWelfareRows() {
   return readCSV('5_number_of_recipients.csv')
     .filter(row => row['행정동'] && row['행정동'] !== '기타')
@@ -431,8 +777,10 @@ async function main() {
   const startedAt = new Date().toISOString();
   loadLocalEnv();
   let populationSource = 'csv_static_fallback';
+  let socialSource = 'csv_static_fallback';
   let districtPopulation = buildDistrictPopulationRows();
   let dongPopulation = buildDongPopulationRows();
+  let districtSocial = buildDistrictSocialRowsFromCsv();
 
   try {
     const kosisPopulation = await buildKosisPopulationRows();
@@ -445,14 +793,25 @@ async function main() {
     console.warn(`KOSIS resident population seed fallback to CSV: ${err.message}`);
   }
 
+  try {
+    const kosisSocial = await buildKosisSocialRows();
+    if (kosisSocial) {
+      districtSocial = kosisSocial;
+      socialSource = 'kosis_annual';
+    }
+  } catch (err) {
+    console.warn(`KOSIS social safety seed fallback to CSV: ${err.message}`);
+  }
+
   const districtWelfare = buildDistrictWelfareRows();
   const dongWelfare = buildDongWelfareRows();
   const libraryProfiles = buildLibraryProfiles();
 
+  await upsertRows('source_catalog', SOURCE_CATALOG_ROWS, 'source_key');
   await upsertRows('library_profiles', libraryProfiles, 'library_id');
-  await deleteMetricRows('district_metrics', ['resident_population_age_gender', 'welfare_recipient_rate']);
+  await deleteMetricRows('district_metrics', ['resident_population_age_gender', 'welfare_recipient_rate', 'social_safety_composition']);
   await deleteMetricRows('dong_metrics', ['resident_population_age_gender', 'welfare_recipients']);
-  await insertRows('district_metrics', [...districtPopulation, ...districtWelfare]);
+  await insertRows('district_metrics', [...districtPopulation, ...districtWelfare, ...districtSocial]);
   await insertRows('dong_metrics', [...dongPopulation, ...dongWelfare]);
   await request('refresh_runs', {
     method: 'POST',
@@ -461,8 +820,8 @@ async function main() {
       status: 'success',
       started_at: startedAt,
       finished_at: new Date().toISOString(),
-      item_count: libraryProfiles.length + districtPopulation.length + dongPopulation.length + districtWelfare.length + dongWelfare.length,
-      error_message: `resident_population_source=${populationSource}`
+      item_count: libraryProfiles.length + districtPopulation.length + dongPopulation.length + districtWelfare.length + dongWelfare.length + districtSocial.length,
+      error_message: `resident_population_source=${populationSource};social_safety_source=${socialSource}`
     }]
   });
 }
