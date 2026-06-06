@@ -13,6 +13,7 @@ Netlify Function(`/api/insight-api`)을 중심으로 동작하며, 가능한 데
   - 캐시는 메모리 + `/tmp/insight-api-cache.json` 영속파일로 관리
   - TTL: 7일
 - Netlify가 제공하지 않는 데이터는 정적 데이터로 즉시 fallback
+- `SUPABASE_URL`과 서버 키가 있으면 주민등록인구/수급 지표는 Supabase Postgres를 우선 조회
 - 주 1회 배치로 백엔드(함수) 캐시를 사전 갱신
 
 ### 갱신 흐름
@@ -20,9 +21,10 @@ Netlify Function(`/api/insight-api`)을 중심으로 동작하며, 가능한 데
 1. 사용자가 프런트에서 API 호출
 2. 캐시 HIT면 즉시 반환
 3. MISS면 실시간 API 시도
-4. 실시간 API 실패하면 정적 CSV/JSON fallback
-5. 응답을 7일 TTL로 캐싱
-6. GitHub Actions가 주간으로 사전 `forceRefresh` 수행
+4. Supabase에 주간 적재된 주민등록인구/수급 지표가 있으면 우선 사용
+5. 실시간 API나 Supabase 조회가 실패하면 정적 CSV/JSON fallback
+6. 응답을 7일 TTL로 캐싱
+7. GitHub Actions가 주간으로 사전 `forceRefresh` 수행
 
 ## 사용 가능한 API 파라미터
 
@@ -80,6 +82,24 @@ npm run build:function-data
   - 필요 Secrets:
     - `INSIGHT_API_BASE_URL` (예: `https://your-site.netlify.app/api/insight-api`)
 
+## Supabase seed
+
+Supabase 스키마를 만든 뒤 기존 정적 데이터를 DB에 적재하려면 서버 전용 환경변수를 설정하고 실행합니다.
+
+```bash
+npm run seed:supabase
+```
+
+필요 환경변수:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+현재 seed 대상:
+- `library_profiles`: 도서관 215개 기본 프로필
+- `district_metrics`: 자치구 주민등록인구, 수급률
+- `dong_metrics`: 행정동 주민등록인구, 수급자 수
+- `refresh_runs`: seed 실행 이력
+
 ## 배포 설정
 
 - Netlify Function은 `/api/insight-api` 경로로 직접 매핑됩니다.
@@ -88,3 +108,20 @@ npm run build:function-data
   - `SEOUL_API_KEY`
   - `KAKAO_REST_API_KEY`
   - `INSIGHT_CACHE_ADMIN_TOKEN` (원하면 `type=cache` API 보호용)
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY` (서버 함수/seed 전용, 클라이언트 노출 금지)
+
+## Notion 문서 기록
+
+프로젝트 의사결정, 개발 로그, API 매핑 문서는 Notion 프로젝트 페이지 아래에 남깁니다. 로컬 `.env`에만 아래 값을 저장하세요.
+
+- `NOTION_TOKEN`
+- `NOTION_PROJECT_PAGE_ID`
+
+마크다운 파일을 Notion 하위 페이지로 올릴 때:
+
+```bash
+npm run notion:create -- --title "데이터 API 전환 매핑" --file docs/api-source-mapping.md
+```
+
+`NOTION_TOKEN`은 서버/클라이언트 런타임에 필요하지 않은 문서화 자동화용 토큰이므로 Netlify 환경변수에는 넣지 않아도 됩니다.

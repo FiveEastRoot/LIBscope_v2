@@ -11,6 +11,8 @@
     "refresh:insight-cache": "node scripts/refresh-insight-cache.cjs",
     "refresh:insight-cache:district": "cross-env INSIGHT_REFRESH_SCOPE=district npm run refresh:insight-cache",
     "refresh:insight-cache:library": "cross-env INSIGHT_REFRESH_SCOPE=library npm run refresh:insight-cache",
+    "seed:supabase": "node scripts/seed-supabase-metrics.cjs",
+    "notion:create": "node scripts/notion-create-page.cjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactECharts from 'echarts-for-react';
 import { 
@@ -7,7 +8,6 @@ import {
   Users, 
   BookOpen, 
   Calendar, 
-  Map as MapIcon, 
   GraduationCap, 
   Award,
   ChevronRight,
@@ -20,6 +20,30 @@ const guList = [...new Set(libraryData.libraries.map(lib => lib.gu))].sort();
 
 const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY || '05b872ee85af3352573dc4c52b709ddd';
 
+function PopulationModeToggle({ populationMode, onChange }) {
+  return (
+    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1">
+      {[
+        { key: 'resident', label: '주민등록' },
+        { key: 'living', label: '생활인구' }
+      ].map(option => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => onChange(option.key)}
+          className={`px-3 py-1.5 text-xs font-extrabold rounded-md transition-colors ${
+            populationMode === option.key
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('district'); // 'district' | 'library'
   const [selectedGu, setSelectedGu] = useState('강남구');
@@ -31,6 +55,7 @@ function App() {
   const [error, setError] = useState(null);
   const [districtData, setDistrictData] = useState(null);
   const [libraryDataDetail, setLibraryDataDetail] = useState(null);
+  const [populationMode, setPopulationMode] = useState('resident');
 
   // 지도 인스턴스 참조
   const mapContainerRef = useRef(null);
@@ -339,17 +364,31 @@ function App() {
 
   const getPopulationSourceLabel = (population) => {
     if (!population) return '행정동 통계 (BOM 백업)';
+    if (population.source === 'resident_registration_csv_fallback') {
+      return '주민등록인구 통계 (BOM 백업)';
+    }
     if (population.source === 'SPOP_LOCAL_RESD_DONG') {
       const dateText = formatPopulationSourceDate(population.referenceDate);
       return dateText
         ? `서울 열린데이터광장(행정동 생활인구 추정치, 기준일 ${dateText})`
         : '서울 열린데이터광장(행정동 생활인구 추정치)';
     }
+    if (population.source === 'living_population_unavailable') {
+      return '생활인구 API 조회 대기';
+    }
     if (population.source === 'csv_fallback') {
       return '행정동 통계 (BOM 백업)';
     }
     return population.source;
   };
+
+  const getPopulationByMode = (population) => {
+    if (!population) return null;
+    return population.modes?.[populationMode] || population;
+  };
+
+  const activeDistrictPopulation = districtData ? getPopulationByMode(districtData.population) : null;
+  const activeLibraryPopulation = libraryDataDetail ? getPopulationByMode(libraryDataDetail.demographics) : null;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -461,7 +500,7 @@ function App() {
                   <div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">구내 총 인구</p>
                     <h3 className="text-2xl font-extrabold text-slate-800 mt-1">
-                      {districtData.population.total.toLocaleString()}명
+                      {activeDistrictPopulation.total.toLocaleString()}명
                     </h3>
                   </div>
                   <div className="bg-blue-50 text-blue-600 p-3 rounded-xl">
@@ -469,7 +508,7 @@ function App() {
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2">
-                  출처: {getPopulationSourceLabel(districtData.population)}
+                  출처: {getPopulationSourceLabel(activeDistrictPopulation)}
                 </div>
               </div>
 
@@ -506,7 +545,7 @@ function App() {
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2">
-                  출처: 서울 열린데이터광장(기초생활수급자 현황)
+                  출처: 서울 열린데이터광장(기초생활수급자 현황, 주민등록인구 분모)
                 </div>
               </div>
 
@@ -532,17 +571,20 @@ function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800">👥 연령대별 인구 분포 (65세 이상 강조)</h4>
+                  <div className="flex items-start justify-between gap-4">
+                    <h4 className="font-extrabold text-lg text-slate-800">👥 연령대별 인구 분포 (65세 이상 강조)</h4>
+                    <PopulationModeToggle populationMode={populationMode} onChange={setPopulationMode} />
+                  </div>
                   <p className="text-xs text-slate-400 mb-4">65세 이상 연령대는 주황색으로 강조 표시됩니다.</p>
                 </div>
                 <div className="h-80">
                   <ReactECharts 
-                    option={getAgeChartOption(districtData.population.ageDistribution)} 
+                    option={getAgeChartOption(activeDistrictPopulation.ageDistribution)} 
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(districtData.population)}
+                  출처: {getPopulationSourceLabel(activeDistrictPopulation)}
                 </div>
               </div>
 
@@ -552,12 +594,12 @@ function App() {
                 </div>
                 <div className="h-80">
                   <ReactECharts 
-                    option={getGenderChartOption(districtData.population.genderRatio)} 
+                    option={getGenderChartOption(activeDistrictPopulation.genderRatio)} 
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(districtData.population)}
+                  출처: {getPopulationSourceLabel(activeDistrictPopulation)}
                 </div>
               </div>
             </div>
@@ -565,7 +607,7 @@ function App() {
             {/* 취약계층 세부 구성 분석 */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
               <div className="flex justify-between items-center mb-6">
-                <h4 className="font-extrabold text-lg text-slate-800">🌐 사회안전망 대상자 유형 분석 (100% 누적 가구/장애/국적 구성)</h4>
+                <h4 className="font-extrabold text-lg text-slate-800">🌐 사회안전망 대상자 유형 분석 (100% 누적 가구/장애/외국인 주민 구성)</h4>
                 <span className="text-[10px] text-slate-400 font-medium">출처: 서울시 자치구 통계 (BOM 백업)</span>
               </div>
               
@@ -585,16 +627,16 @@ function App() {
                 </div>
 
                 <div>
-                  <h5 className="text-sm font-bold text-slate-500 mb-2">🌍 다문화 국적 비율 (상위 국가군)</h5>
+                  <h5 className="text-sm font-bold text-slate-500 mb-2">🌍 외국인 주민 국적 비율 (상위 국가군)</h5>
                   <div className="h-28">
-                    <ReactECharts option={getStackedBarOption('다문화', districtData.socialIndicators.multicultural)} style={{ height: '100%' }} />
+                    <ReactECharts option={getStackedBarOption('외국인 주민', districtData.socialIndicators.multicultural)} style={{ height: '100%' }} />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 문화 강좌 & 교육 인프라 분석 */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 교육 인프라 분석 */}
+            <div className="grid grid-cols-1 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
                 <div>
                   <h4 className="font-extrabold text-lg text-slate-800 mb-4">🏫 교육기관 인프라 (초·중·고·대학교 수)</h4>
@@ -633,45 +675,6 @@ function App() {
                   출처: 서울 열린데이터광장(나이스 학교 정보 및 대학 전문대학 DB API)
                 </div>
               </div>
-
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
-                <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-4">🎨 문화 활동 및 운영 관심도 지표</h4>
-                  <div className="grid grid-cols-2 gap-4 mt-6">
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center space-x-3">
-                      <div className="text-indigo-600 bg-indigo-50 p-2 rounded-lg"><BookOpen size={20} /></div>
-                      <div>
-                        <p className="text-slate-400 text-xs font-bold">1만명당 강좌비율</p>
-                        <p className="font-extrabold text-lg text-slate-800">{districtData.cultureAndEducation.lectureRate.toFixed(1)}회</p>
-                      </div>
-                    </div>
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center space-x-3">
-                      <div className="text-amber-600 bg-amber-50 p-2 rounded-lg"><Award size={20} /></div>
-                      <div>
-                        <p className="text-slate-400 text-xs font-bold">운영 관심도 점수</p>
-                        <p className="font-extrabold text-lg text-slate-800">{districtData.cultureAndEducation.operationInterest.toFixed(1)}점</p>
-                      </div>
-                    </div>
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center space-x-3">
-                      <div className="text-emerald-600 bg-emerald-50 p-2 rounded-lg"><Users size={20} /></div>
-                      <div>
-                        <p className="text-slate-400 text-xs font-bold">강좌 참가자 비율</p>
-                        <p className="font-extrabold text-lg text-slate-800">{districtData.cultureAndEducation.participationRate.toFixed(1)}명</p>
-                      </div>
-                    </div>
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center space-x-3">
-                      <div className="text-rose-600 bg-rose-50 p-2 rounded-lg"><Building size={20} /></div>
-                      <div>
-                        <p className="text-slate-400 text-xs font-bold">이용 관심도 점수</p>
-                        <p className="font-extrabold text-lg text-slate-800">{districtData.cultureAndEducation.usageInterest.toFixed(1)}점</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-[10px] text-slate-400 font-medium mt-4 text-right">
-                  출처: 서울시 자치구 문화 지표 (BOM 백업)
-                </div>
-              </div>
             </div>
 
           </div>
@@ -688,7 +691,7 @@ function App() {
                   <div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">도서관 반경 2km 총인구</p>
                     <h3 className="text-2xl font-extrabold text-slate-800 mt-1">
-                      {libraryDataDetail.demographics.total.toLocaleString()}명
+                      {activeLibraryPopulation.total.toLocaleString()}명
                     </h3>
                   </div>
                   <div className="bg-blue-50 text-blue-600 p-3 rounded-xl">
@@ -696,7 +699,7 @@ function App() {
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2">
-                  출처: {getPopulationSourceLabel(libraryDataDetail.demographics)}
+                  출처: {getPopulationSourceLabel(activeLibraryPopulation)}
                 </div>
               </div>
 
@@ -742,16 +745,19 @@ function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-4">👥 도서관 반경 2km 내 인구 분포 (65세 이상 강조)</h4>
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <h4 className="font-extrabold text-lg text-slate-800">👥 도서관 반경 2km 내 인구 분포 (65세 이상 강조)</h4>
+                    <PopulationModeToggle populationMode={populationMode} onChange={setPopulationMode} />
+                  </div>
                 </div>
                 <div className="h-80">
                   <ReactECharts 
-                    option={getAgeChartOption(libraryDataDetail.demographics.ageDistribution)} 
+                    option={getAgeChartOption(activeLibraryPopulation.ageDistribution)} 
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(libraryDataDetail.demographics)}
+                  출처: {getPopulationSourceLabel(activeLibraryPopulation)}
                 </div>
               </div>
 
@@ -761,12 +767,12 @@ function App() {
                 </div>
                 <div className="h-80">
                   <ReactECharts 
-                    option={getGenderChartOption(libraryDataDetail.demographics.genderRatio)} 
+                    option={getGenderChartOption(activeLibraryPopulation.genderRatio)} 
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(libraryDataDetail.demographics)}
+                  출처: {getPopulationSourceLabel(activeLibraryPopulation)}
                 </div>
               </div>
             </div>

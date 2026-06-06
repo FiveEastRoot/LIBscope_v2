@@ -28,3 +28,7 @@ dist-ssr
 
 # Local environment variables
 .env
+
+# Local Codex/agent skill installs
+.agents
+skills-lock.json

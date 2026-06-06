@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const staticData = require('./static-data.cjs');
+const supabaseMetrics = require('./supabase-metrics.cjs');
 
 const axios = {
   async get(url, options = {}) {
@@ -387,7 +388,7 @@ function rowToPopulationSummary(summary, row, dongName) {
   Object.keys(row).forEach(key => {
     if (!key.startsWith('MALE_')) return;
     if (!key.endsWith('_LVPOP_CO')) return;
-    const suffix = key.slice(5, -8);
+    const suffix = key.slice(5, -9);
     if (seenSuffixes.has(suffix)) return;
     seenSuffixes.add(suffix);
 
@@ -427,6 +428,9 @@ function rowToPopulationSummary(summary, row, dongName) {
 function finalizePopulationSummary(summary) {
   summary.genderRatio.male = Math.round(summary.genderRatio.male);
   summary.genderRatio.female = Math.round(summary.genderRatio.female);
+  if (!summary.total) {
+    summary.total = summary.genderRatio.male + summary.genderRatio.female;
+  }
   summary.total = Math.round(summary.total);
   Object.keys(summary.ageDistribution).forEach(key => {
     summary.ageDistribution[key] = Math.round(summary.ageDistribution[key]);
@@ -461,7 +465,8 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
     code: codeMapping.nameToCode[`${area.gu || gu} ${area.dong}`]
   }));
   const targetCodes = new Set(dongCodeEntries.map(entry => entry.code).filter(Boolean));
-  summary.missingDongs = dongCodeEntries.filter(entry => !entry.code).map(entry => entry.dong);
+  const unmappedDongs = dongCodeEntries.filter(entry => !entry.code).map(entry => entry.dong);
+  summary.missingDongs = unmappedDongs;
 
   if (targetCodes.size === 0) {
     summary.source = 'csv_fallback';
@@ -477,30 +482,36 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
 
   for (const referenceDate of candidateDates) {
     const apiName = 'SPOP_LOCAL_RESD_DONG';
-    const url = `http://openapi.seoul.go.kr:8088/${apiKey}/json/${apiName}/1/1000/${referenceDate}/`;
     try {
-      const response = await axios.get(url, { timeout: 5000 });
-      const rows = pickApiRows(apiName, response);
+      const responses = await Promise.all(
+        [...targetCodes].map(code => {
+          const url = `http://openapi.seoul.go.kr:8088/${apiKey}/json/${apiName}/1/1/${referenceDate}/00/${code}`;
+          return axios.get(url, { timeout: 5000 }).catch(() => null);
+        })
+      );
+      const rows = responses.flatMap(response => response ? pickApiRows(apiName, response) : []);
       if (rows.length === 0) continue;
 
       const rowsByCode = new Map(rows.map(row => [String(extractDongCodeFromRow(row)), row]));
+      const attemptSummary = createEmptyPopulationSummary();
+      attemptSummary.missingDongs = [...unmappedDongs];
       let matched = false;
       dongCodeEntries.forEach(({ dong, code }) => {
         if (!code) return;
         const row = rowsByCode.get(String(code));
         if (!row) {
-          summary.missingDongs.push(dong);
+          attemptSummary.missingDongs.push(dong);
           return;
         }
-        const beforeCount = summary.matchedDongs.length;
-        rowToPopulationSummary(summary, row, dong);
-        if (summary.matchedDongs.length > beforeCount) matched = true;
+        const beforeCount = attemptSummary.matchedDongs.length;
+        rowToPopulationSummary(attemptSummary, row, dong);
+        if (attemptSummary.matchedDongs.length > beforeCount) matched = true;
       });
 
       if (matched) {
-        summary.source = apiName;
-        finalizePopulationSummary(summary);
-        return summary;
+        attemptSummary.source = apiName;
+        finalizePopulationSummary(attemptSummary);
+        return attemptSummary;
       }
     } catch (err) {
       // 후보 API 호출 실패 시 다음 날짜로 전환
@@ -510,6 +521,106 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
 
   summary.source = 'csv_fallback';
   return summary;
+}
+
+function buildPopulationModes({ resident, living }) {
+  const fallbackResident = resident || createEmptyPopulationSummary();
+  const fallbackLiving = living || createEmptyPopulationSummary();
+  return {
+    defaultMode: 'resident',
+    modes: {
+      resident: fallbackResident,
+      living: fallbackLiving
+    }
+  };
+}
+
+function getDefaultPopulation(populationModes) {
+  return populationModes.modes[populationModes.defaultMode] || populationModes.modes.resident || populationModes.modes.living;
+}
+
+function fetchResidentDistrictPopulationFromCsv(gu) {
+  const summary = createEmptyPopulationSummary();
+  summary.source = 'resident_registration_csv_fallback';
+  const popCSV = parseCSV('district_age_gender_population.csv');
+  const guPopRows = popCSV.filter(r => r['자치구'] === gu);
+
+  guPopRows.forEach(r => {
+    const age = r['연령'];
+    const gender = r['성별'];
+    const count = parseInt(r['인구수'] || 0, 10);
+    if (!age || !Number.isFinite(count)) return;
+    summary.ageDistribution[age] = (summary.ageDistribution[age] || 0) + count;
+    if (gender === '남자') summary.genderRatio.male += count;
+    else if (gender === '여자') summary.genderRatio.female += count;
+  });
+
+  finalizePopulationSummary(summary);
+  return summary;
+}
+
+async function fetchLivingDistrictPopulation({ apiKey, gu }) {
+  const codeMapping = readJSON('dong_code_mapping.json');
+  if (codeMapping && codeMapping.nameToCode) {
+    const dongs = Object.keys(codeMapping.nameToCode)
+      .filter(key => key.startsWith(`${gu} `))
+      .map(key => key.replace(`${gu} `, ''));
+
+    if (dongs.length > 0) {
+      const summary = await fetchLiveDongPopulation({
+        apiKey,
+        gu,
+        dongs,
+        dongAreas: dongs.map(dong => ({ gu, dong }))
+      });
+      if (summary.source === 'SPOP_LOCAL_RESD_DONG') {
+        return summary;
+      }
+    }
+  }
+
+  const summary = createEmptyPopulationSummary();
+  summary.source = 'living_population_unavailable';
+  return summary;
+}
+
+function fetchResidentLibraryPopulationFromCsv({ dongs }) {
+  const popAgeCSV = parseCSV('2_population_and_senior.csv');
+  const popGenderCSV = parseCSV('3_gender.csv');
+  const matchedAgeRows = popAgeCSV.filter(r => dongs.includes(r['행정동']));
+  const matchedGenderRows = popGenderCSV.filter(r => dongs.includes(r['행정동']));
+  const summary = createEmptyPopulationSummary();
+
+  matchedAgeRows.forEach(row => {
+    Object.keys(row).forEach(key => {
+      if (key !== '자치구' && key !== '행정동' && key !== '고령자' && key !== '학령인구') {
+        const count = parseInt(row[key] || 0, 10);
+        if (!Number.isFinite(count)) return;
+        summary.ageDistribution[key] = (summary.ageDistribution[key] || 0) + count;
+      }
+    });
+  });
+
+  matchedGenderRows.forEach(row => {
+    summary.genderRatio.male += parseInt(row['남자'] || 0, 10);
+    summary.genderRatio.female += parseInt(row['여자'] || 0, 10);
+  });
+
+  summary.source = 'resident_registration_csv_fallback';
+  summary.matchedDongs = matchedAgeRows.map(row => row['행정동']);
+  summary.missingDongs = dongs.filter(dong => !matchedAgeRows.some(row => row['행정동'] === dong));
+  finalizePopulationSummary(summary);
+  return summary;
+}
+
+async function withSupabaseFallback(label, fetcher, fallback) {
+  try {
+    const value = await fetcher();
+    if (value) return value;
+  } catch (err) {
+    console.warn(`[Supabase] ${label} fallback:`, err.message);
+  }
+  return fallback();
 }
 
 exports.handler = async (event, context) => {
@@ -612,60 +723,18 @@ exports.handler = async (event, context) => {
         return { statusCode: 200, headers, body: JSON.stringify(cached.value) };
       }
 
-      // 1) 자치구 인구 통계 (연령별, 성별) - API 연동 시도 후 실패시 CSV Fallback
-      let ageData = {};
-      let genderData = { male: 0, female: 0 };
-      let isLivePopulation = false;
-      let populationSource = 'csv_fallback';
-      let populationReferenceDate = null;
-
-      try {
-        // 서울시 행정동 생활인구 추정치(OpenAPI) 호출 시도
-        const popUrl = `http://openapi.seoul.go.kr:8088/${SEOUL_API_KEY}/json/SPOP_LOCAL_RESD_DONG/1/1000/`;
-        const popRes = await axios.get(popUrl, { timeout: 3000 });
-        if (popRes.data && popRes.data.SPOP_LOCAL_RESD_DONG && popRes.data.SPOP_LOCAL_RESD_DONG.row) {
-          const rows = popRes.data.SPOP_LOCAL_RESD_DONG.row.filter(r =>
-            r.JACHIGU === gu || (r.ADSTRD_NM && r.ADSTRD_NM.includes(gu))
-          );
-          if (rows.length > 0) {
-            rows.forEach(r => {
-              Object.keys(r).forEach(k => {
-                if (!k.startsWith('MALE_') || !k.endsWith('_LVPOP_CO')) return;
-                const suffix = k.slice(5, -8);
-                const ageLabel = normalizePopulationSuffix(suffix);
-                if (!ageLabel) return;
-                const malePop = parsePopulationNumber(r[`MALE_${suffix}_LVPOP_CO`]);
-                const femalePop = parsePopulationNumber(r[`FEMALE_${suffix}_LVPOP_CO`]);
-                if (malePop === 0 && femalePop === 0) return;
-                ageData[ageLabel] = (ageData[ageLabel] || 0) + malePop + femalePop;
-                genderData.male += malePop;
-                genderData.female += femalePop;
-              });
-              if (!populationReferenceDate && (r.STDR_DE_ID || r.STDR_DT || r.STDR_DATE)) {
-                populationReferenceDate = r.STDR_DE_ID || r.STDR_DT || r.STDR_DATE;
-              }
-            });
-            isLivePopulation = true;
-            populationSource = 'SPOP_LOCAL_RESD_DONG';
-          }
-        }
-      } catch (err) {
-        console.warn('행정동 생활인구 API 호출 실패, CSV Fallback 진행:', err.message);
-      }
-
-      // Live API 실패 시 CSV 데이터 사용
-      if (!isLivePopulation) {
-        const popCSV = parseCSV('district_age_gender_population.csv');
-        const guPopRows = popCSV.filter(r => r['자치구'] === gu);
-        guPopRows.forEach(r => {
-          const age = r['연령'];
-          const gender = r['성별'];
-          const count = parseInt(r['인구수'] || 0);
-          ageData[age] = (ageData[age] || 0) + count;
-          if (gender === '남자') genderData.male += count;
-          else if (gender === '여자') genderData.female += count;
-        });
-      }
+      // 1) 자치구 인구 통계: 주민등록인구 기본 + 생활인구 병행 사전 로드
+      const residentPopulation = await withSupabaseFallback(
+        `district resident population ${gu}`,
+        () => supabaseMetrics.fetchDistrictResidentPopulation(gu),
+        () => fetchResidentDistrictPopulationFromCsv(gu)
+      );
+      const livingPopulation = await fetchLivingDistrictPopulation({ apiKey: SEOUL_API_KEY, gu });
+      const populationModes = buildPopulationModes({
+        resident: residentPopulation,
+        living: livingPopulation
+      });
+      const defaultPopulation = getDefaultPopulation(populationModes);
 
       // 2) 자치구 종합 지표 (수급률, 다문화, 장애유형, 1인가구 등)
       // district_data_combined.csv 로드
@@ -845,18 +914,28 @@ exports.handler = async (event, context) => {
       }
 
       // 최종 자치구 분석 데이터 반환
+      const supabaseWelfare = await withSupabaseFallback(
+        `district welfare ${gu}`,
+        () => supabaseMetrics.fetchDistrictWelfare(gu),
+        () => null
+      );
+
       const responseData = {
         gu,
         population: {
-          ageDistribution: ageData,
-          genderRatio: genderData,
-          total: genderData.male + genderData.female,
-          source: populationSource,
-          referenceDate: populationReferenceDate
+          ageDistribution: defaultPopulation.ageDistribution,
+          genderRatio: defaultPopulation.genderRatio,
+          total: defaultPopulation.total,
+          source: defaultPopulation.source,
+          referenceDate: defaultPopulation.referenceDate,
+          mode: populationModes.defaultMode,
+          modes: populationModes.modes
         },
-        welfare: {
+        populationModes,
+        welfare: supabaseWelfare || {
           recipientRate: parseFloat(guCombined['수급률'] || 0),
-          seoulAvgRecipientRate: parseFloat(seoulAvgRecipientRate.toFixed(3))
+          seoulAvgRecipientRate: parseFloat(seoulAvgRecipientRate.toFixed(3)),
+          denominator: 'resident_population'
         },
         socialIndicators: {
           multicultural,
@@ -866,10 +945,6 @@ exports.handler = async (event, context) => {
           seoulAvgOnePerson: Math.round(seoulAvgOnePerson)
         },
         cultureAndEducation: {
-          lectureRate: parseFloat(guCombined['강좌_비율'] || 0),
-          operationInterest: parseFloat(guCombined['운영_관심도_점수'] || 0),
-          participationRate: parseFloat(guCombined['참가자_비율'] || 0),
-          usageInterest: parseFloat(guCombined['이용_관심도_점수'] || 0),
           schools: schoolStats,
           publicLibraryCount,
           liveCultureEventsMonth: cultureEventsCount
@@ -962,55 +1037,34 @@ exports.handler = async (event, context) => {
       }
 
 
-      // 2) 행정동 인구 현황 집계 (연령대별, 성별)
-      // 서울시 행정동 생활인구 API(가능 시)를 우선 사용하고, 실패 시 기존 CSV로 폴백
-      let populationSummary = await fetchLiveDongPopulation({
+      // 2) 행정동 인구 현황 집계: 주민등록인구 기본 + 생활인구 병행 사전 로드
+      const residentPopulation = await withSupabaseFallback(
+        `library resident population ${library}`,
+        () => supabaseMetrics.fetchLibraryResidentPopulation(dongs),
+        () => fetchResidentLibraryPopulationFromCsv({ dongs })
+      );
+      const livingPopulation = await fetchLiveDongPopulation({
         apiKey: SEOUL_API_KEY,
         gu,
         dongs,
         dongAreas
       });
-
-      if (populationSummary.source !== 'SPOP_LOCAL_RESD_DONG') {
-        console.warn(`[PopulationAPI] ${library}: 실시간 인구 조회 실패, CSV 폴백 사용`);
-        const popAgeCSV = parseCSV('2_population_and_senior.csv');
-        const popGenderCSV = parseCSV('3_gender.csv');
-
-        const matchedAgeRows = popAgeCSV.filter(r => dongs.includes(r['행정동']));
-        const matchedGenderRows = popGenderCSV.filter(r => dongs.includes(r['행정동']));
-
-        const ageDistribution = {};
-        matchedAgeRows.forEach(row => {
-          Object.keys(row).forEach(key => {
-            if (key !== '자치구' && key !== '행정동' && key !== '고령자' && key !== '학령인구') {
-              const count = parseInt(row[key] || 0);
-              ageDistribution[key] = (ageDistribution[key] || 0) + count;
-            }
-          });
-        });
-
-        const genderRatio = { male: 0, female: 0 };
-        matchedGenderRows.forEach(row => {
-          genderRatio.male += parseInt(row['남자'] || 0);
-          genderRatio.female += parseInt(row['여자'] || 0);
-        });
-
-        populationSummary = {
-          ageDistribution,
-          genderRatio,
-          total: genderRatio.male + genderRatio.female,
-          source: 'csv_fallback',
-          referenceDate: null,
-          matchedDongs: matchedAgeRows.map(row => row['행정동']),
-          missingDongs: dongs.filter(dong => !matchedAgeRows.some(row => row['행정동'] === dong))
-        };
-      }
+      const populationModes = buildPopulationModes({
+        resident: residentPopulation,
+        living: livingPopulation
+      });
+      const defaultPopulation = getDefaultPopulation(populationModes);
 
       // 수급자 현황 집계 (5_number_of_recipients.csv)
       const welfareCSV = parseCSV('5_number_of_recipients.csv');
       const matchedWelfareRows = welfareCSV.filter(r => dongs.includes(r['행정동']));
       const avgWelfare = matchedWelfareRows.reduce((sum, r) => sum + parseInt(r['수급자수'] || 0), 0) / (matchedWelfareRows.length || 1);
       const seoulAvgWelfare = welfareCSV.reduce((sum, r) => sum + parseInt(r['수급자수'] || 0), 0) / (welfareCSV.length || 1);
+      const supabaseLibraryWelfare = await withSupabaseFallback(
+        `library welfare ${library}`,
+        () => supabaseMetrics.fetchLibraryWelfare(dongs),
+        () => null
+      );
 
       // 3) 카카오 Local API를 통한 도서관 반경 2km 이내 공공기관(PO3) 검색
       let publicPlaces = [];
@@ -1122,17 +1176,21 @@ exports.handler = async (event, context) => {
         dongDistances,
         dongAreas,
         demographics: {
-          ageDistribution: populationSummary.ageDistribution,
-          genderRatio: populationSummary.genderRatio,
-          total: populationSummary.total,
-          source: populationSummary.source,
-          referenceDate: populationSummary.referenceDate,
-          matchedDongs: populationSummary.matchedDongs,
-          missingDongs: populationSummary.missingDongs
+          ageDistribution: defaultPopulation.ageDistribution,
+          genderRatio: defaultPopulation.genderRatio,
+          total: defaultPopulation.total,
+          source: defaultPopulation.source,
+          referenceDate: defaultPopulation.referenceDate,
+          matchedDongs: defaultPopulation.matchedDongs,
+          missingDongs: defaultPopulation.missingDongs,
+          mode: populationModes.defaultMode,
+          modes: populationModes.modes
         },
-        welfare: {
+        populationModes,
+        welfare: supabaseLibraryWelfare || {
           avgRecipientCount: Math.round(avgWelfare),
-          seoulAvgRecipientCount: Math.round(seoulAvgWelfare)
+          seoulAvgRecipientCount: Math.round(seoulAvgWelfare),
+          denominator: 'resident_population'
         },
         infrastructure: {
           publicPlaces,
