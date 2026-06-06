@@ -214,7 +214,7 @@ function App() {
       circle2km.setMap(map);
       circlesRef.current.push(circle2km);
 
-      // 3. 주변 공공기관(PO3) 마커 표시
+      // 3. 주변 공공기관/문화시설 마커 표시
       const publicPlaces = libraryDataDetail.infrastructure.publicPlaces || [];
       publicPlaces.forEach(place => {
         if (!place.lat || !place.lng) return;
@@ -227,7 +227,7 @@ function App() {
         
         // 인포윈도우 추가
         const infowindow = new window.kakao.maps.InfoWindow({
-          content: `<div style="padding:5px;font-size:12px;color:#333;width:150px;text-align:center;"><b>${place.name}</b><br><span style="font-size:10px;color:#777;">${place.distance}m</span></div>`
+          content: `<div style="padding:5px;font-size:12px;color:#333;width:160px;text-align:center;"><b>${place.name}</b><br><span style="font-size:10px;color:#777;">${place.category || '시설'} · ${place.distance}m</span></div>`
         });
         window.kakao.maps.event.addListener(marker, 'mouseover', () => {
           infowindow.open(map, marker);
@@ -867,7 +867,7 @@ function App() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between" style={{ maxHeight: '565px' }}>
                 <div>
                   <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-extrabold text-lg text-slate-800">🏢 주변 공공기관 정보 (2km 이내)</h4>
+                    <h4 className="font-extrabold text-lg text-slate-800">🏢 주변 공공기관·문화시설 정보 (2km 이내)</h4>
                   </div>
                   <div className="overflow-y-auto space-y-3 pr-2" style={{ maxHeight: '440px' }}>
                     {libraryDataDetail.infrastructure.publicPlaces && libraryDataDetail.infrastructure.publicPlaces.length > 0 ? (
@@ -877,6 +877,15 @@ function App() {
                           <div>
                             <p className="font-bold text-sm text-slate-800">{place.name}</p>
                             <p className="text-xs text-slate-400 line-clamp-1">{place.address}</p>
+                            {place.category && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 mr-1 inline-block ${
+                                place.category === '문화시설'
+                                  ? 'bg-rose-50 text-rose-600'
+                                  : 'bg-indigo-50 text-indigo-600'
+                              }`}>
+                                {place.category}
+                              </span>
+                            )}
                             <span className="text-[10px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-full mt-1 inline-block">
                               {place.distance.toLocaleString()}m
                             </span>
@@ -884,12 +893,12 @@ function App() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-slate-400 text-sm font-semibold text-center py-20">검색된 공공기관이 없습니다.</p>
+                      <p className="text-slate-400 text-sm font-semibold text-center py-20">검색된 공공기관/문화시설이 없습니다.</p>
                     )}
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-3 mt-3 text-right">
-                  출처: 카카오 Local API (공공기관 카테고리 검색)
+                  출처: 카카오 Local API (공공기관/문화시설 카테고리 검색)
                 </div>
               </div>
             </div>

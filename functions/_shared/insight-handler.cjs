@@ -1111,14 +1111,18 @@ exports.handler = async (event, context) => {
         () => null
       );
 
-      // 3) 카카오 Local API를 통한 도서관 반경 2km 이내 공공기관(PO3) 검색
+      // 3) 카카오 Local API를 통한 도서관 반경 2km 이내 공공기관(PO3) + 문화시설(CT1) 검색
       let publicPlaces = [];
       try {
         const kakaoUrl = 'https://dapi.kakao.com/v2/local/search/category.json';
-        const kakaoRes = await axios.get(kakaoUrl, {
+        const placeCategories = [
+          { code: 'PO3', label: '공공기관' },
+          { code: 'CT1', label: '문화시설' }
+        ];
+        const responses = await Promise.all(placeCategories.map(category => axios.get(kakaoUrl, {
           headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` },
           params: {
-            category_group_code: 'PO3',
+            category_group_code: category.code,
             x: libInfo.lng,
             y: libInfo.lat,
             radius: 2000,
@@ -1126,16 +1130,35 @@ exports.handler = async (event, context) => {
             size: 15
           },
           timeout: 3000
+        })
+          .then(res => ({ ...category, documents: res.data?.documents || [] }))
+          .catch(err => {
+            console.warn(`카카오 Local API ${category.label} 검색 실패:`, err.message);
+            return { ...category, documents: [] };
+          })));
+
+        const placeMap = new Map();
+        responses.forEach(category => {
+          category.documents.forEach(d => {
+            const key = d.id || `${d.place_name}|${d.x}|${d.y}`;
+            const distance = parseInt(d.distance, 10);
+            const place = {
+              name: d.place_name,
+              address: d.road_address_name || d.address_name,
+              lat: parseFloat(d.y),
+              lng: parseFloat(d.x),
+              distance: Number.isFinite(distance) ? distance : 0,
+              category: category.label,
+              categoryCode: category.code
+            };
+            if (!placeMap.has(key) || place.distance < placeMap.get(key).distance) {
+              placeMap.set(key, place);
+            }
+          });
         });
-        if (kakaoRes.data && kakaoRes.data.documents) {
-          publicPlaces = kakaoRes.data.documents.map(d => ({
-            name: d.place_name,
-            address: d.road_address_name || d.address_name,
-            lat: parseFloat(d.y),
-            lng: parseFloat(d.x),
-            distance: parseInt(d.distance)
-          }));
-        }
+        publicPlaces = [...placeMap.values()]
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 20);
       } catch (err) {
         console.warn('카카오 Local API 검색 실패:', err.message);
       }
