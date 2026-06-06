@@ -37,6 +37,21 @@ Netlify Function(`/api/insight-api`)을 중심으로 동작하며, 가능한 데
 
 특수:
 - `type=cache&action=clear`: 캐시 전체 삭제
+- `type=health`: 함수 상태와 필수 데이터 파일 존재 여부 확인
+
+## 함수 정적 데이터 번들
+
+Netlify Function 배포에서 CSV/JSON 파일 누락이 발생하지 않도록 필수 백업 데이터는 함수 번들 내부에도 포함합니다.
+
+- 원본 데이터: 프로젝트 루트의 CSV/JSON
+- 함수용 복사본: `functions/_data`
+- 번들 내장 파일: `functions/_shared/static-data.cjs`
+
+원본 CSV/JSON을 수정한 뒤에는 아래 명령으로 함수용 데이터를 다시 생성하세요.
+
+```bash
+npm run build:function-data
+```
 
 ## 500 에러가 날 때 가장 먼저 확인할 포인트
 
@@ -67,7 +82,8 @@ Netlify Function(`/api/insight-api`)을 중심으로 동작하며, 가능한 데
 
 ## 배포 설정
 
-- Netlify Functions 포함 파일은 `netlify.toml`에서 `*.csv`, `*.json`을 포함하도록 되어 있습니다.
+- Netlify Function은 `/api/insight-api` 경로로 직접 매핑됩니다.
+- 필수 백업 데이터는 `functions/_shared/static-data.cjs`에 내장되어 배포 파일 누락 위험을 줄입니다.
 - Netlify 대시보드에서 환경변수로 다음을 지정하세요.
   - `SEOUL_API_KEY`
   - `KAKAO_REST_API_KEY`

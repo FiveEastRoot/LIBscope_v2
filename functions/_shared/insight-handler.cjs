@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const staticData = require('./static-data.cjs');
 
 const axios = {
   async get(url, options = {}) {
@@ -172,18 +173,76 @@ function getAbsolutePath(filePath) {
   let fullPath = path.resolve(process.cwd(), filePath);
   console.log(`[getAbsolutePath] Candidate 1 (process.cwd): ${fullPath} (Exists: ${fs.existsSync(fullPath)})`);
   if (fs.existsSync(fullPath)) return fullPath;
-  
-  // 2. __dirname 기준 상위 폴더 탐색
-  fullPath = path.resolve(__dirname, '../', filePath);
-  console.log(`[getAbsolutePath] Candidate 2 (__dirname parent): ${fullPath} (Exists: ${fs.existsSync(fullPath)})`);
+
+  // 2. 함수 번들 내부 데이터 폴더 탐색
+  fullPath = path.resolve(__dirname, '../_data', filePath);
+  console.log(`[getAbsolutePath] Candidate 2 (function _data): ${fullPath} (Exists: ${fs.existsSync(fullPath)})`);
   if (fs.existsSync(fullPath)) return fullPath;
   
-  // 3. __dirname 기준 내부 폴더 탐색
+  // 3. __dirname 기준 상위 폴더 탐색
+  fullPath = path.resolve(__dirname, '../', filePath);
+  console.log(`[getAbsolutePath] Candidate 3 (__dirname parent): ${fullPath} (Exists: ${fs.existsSync(fullPath)})`);
+  if (fs.existsSync(fullPath)) return fullPath;
+  
+  // 4. __dirname 기준 내부 폴더 탐색
   fullPath = path.resolve(__dirname, filePath);
-  console.log(`[getAbsolutePath] Candidate 3 (__dirname internal): ${fullPath} (Exists: ${fs.existsSync(fullPath)})`);
+  console.log(`[getAbsolutePath] Candidate 4 (__dirname internal): ${fullPath} (Exists: ${fs.existsSync(fullPath)})`);
   if (fs.existsSync(fullPath)) return fullPath;
   
   return null;
+}
+
+function getDataFileStatus(filePath) {
+  const candidates = [
+    path.resolve(process.cwd(), filePath),
+    path.resolve(process.cwd(), 'functions/_data', filePath),
+    path.resolve(__dirname, '../_data', filePath),
+    path.resolve(__dirname, '../../', filePath),
+    path.resolve(__dirname, '../', filePath),
+    path.resolve(__dirname, filePath)
+  ];
+
+  const checked = candidates.map(candidate => ({
+    path: candidate,
+    exists: fs.existsSync(candidate)
+  }));
+
+  return {
+    file: filePath,
+    exists: checked.some(item => item.exists),
+    checked
+  };
+}
+
+function readBundledDataFile(filePath) {
+  if (Object.prototype.hasOwnProperty.call(staticData, filePath)) {
+    return staticData[filePath];
+  }
+
+  try {
+    switch (filePath) {
+      case 'district_age_gender_population.csv':
+        return fs.readFileSync(path.join(__dirname, '../_data/district_age_gender_population.csv'), 'utf-8');
+      case 'district_data_combined.csv':
+        return fs.readFileSync(path.join(__dirname, '../_data/district_data_combined.csv'), 'utf-8');
+      case 'library_dong_mapping.json':
+        return fs.readFileSync(path.join(__dirname, '../_data/library_dong_mapping.json'), 'utf-8');
+      case 'dong_coordinates.json':
+        return fs.readFileSync(path.join(__dirname, '../_data/dong_coordinates.json'), 'utf-8');
+      case 'dong_code_mapping.json':
+        return fs.readFileSync(path.join(__dirname, '../_data/dong_code_mapping.json'), 'utf-8');
+      case '2_population_and_senior.csv':
+        return fs.readFileSync(path.join(__dirname, '../_data/2_population_and_senior.csv'), 'utf-8');
+      case '3_gender.csv':
+        return fs.readFileSync(path.join(__dirname, '../_data/3_gender.csv'), 'utf-8');
+      case '5_number_of_recipients.csv':
+        return fs.readFileSync(path.join(__dirname, '../_data/5_number_of_recipients.csv'), 'utf-8');
+      default:
+        return null;
+    }
+  } catch (err) {
+    return null;
+  }
 }
 
 // CSV의 한 줄을 따옴표와 쉼표를 고려하여 올바르게 분리하는 헬퍼 함수
@@ -209,12 +268,15 @@ function parseCSVLine(line) {
 // 초경량 CSV 파서 (Pandas 대체)
 function parseCSV(filePath) {
   try {
-    const fullPath = getAbsolutePath(filePath);
-    if (!fullPath) {
-      console.warn(`파일을 찾을 수 없습니다: ${filePath}`);
-      return [];
+    let content = readBundledDataFile(filePath);
+    if (content === null) {
+      const fullPath = getAbsolutePath(filePath);
+      if (!fullPath) {
+        console.warn(`파일을 찾을 수 없습니다: ${filePath}`);
+        return [];
+      }
+      content = fs.readFileSync(fullPath, 'utf-8');
     }
-    let content = fs.readFileSync(fullPath, 'utf-8');
     if (content.startsWith('\uFEFF')) {
       content = content.slice(1);
     }
@@ -246,9 +308,12 @@ function parseCSV(filePath) {
 // JSON 파일 읽기 헬퍼
 function readJSON(filePath) {
   try {
-    const fullPath = getAbsolutePath(filePath);
-    if (!fullPath) return null;
-    const content = fs.readFileSync(fullPath, 'utf-8');
+    let content = readBundledDataFile(filePath);
+    if (content === null) {
+      const fullPath = getAbsolutePath(filePath);
+      if (!fullPath) return null;
+      content = fs.readFileSync(fullPath, 'utf-8');
+    }
     return JSON.parse(content);
   } catch (err) {
     console.error(`JSON 읽기 에러 (${filePath}):`, err);
@@ -464,6 +529,33 @@ exports.handler = async (event, context) => {
   };
 
   try {
+    // ------------------ 배포 상태 진단 API ------------------
+    if (type === 'health') {
+      const requiredFiles = [
+        'district_age_gender_population.csv',
+        'district_data_combined.csv',
+        'library_dong_mapping.json',
+        'dong_coordinates.json',
+        'dong_code_mapping.json',
+        '2_population_and_senior.csv',
+        '3_gender.csv',
+        '5_number_of_recipients.csv'
+      ];
+
+      const files = requiredFiles.map(getDataFileStatus);
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          ok: files.every(file => file.exists),
+          runtime: 'netlify-functions',
+          cwd: process.cwd(),
+          dirname: __dirname,
+          files
+        })
+      };
+    }
+
     // ------------------ 캐시 관리 API ------------------
     if (type === 'cache') {
       const adminToken = queryParams.token || '';

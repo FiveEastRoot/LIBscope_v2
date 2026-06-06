@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "netlify dev",
     "dev:vite": "vite",
+    "build:function-data": "node scripts/build-static-function-data.cjs",
     "build": "vite build",
     "refresh:insight-cache": "node scripts/refresh-insight-cache.cjs",
     "refresh:insight-cache:district": "cross-env INSIGHT_REFRESH_SCOPE=district npm run refresh:insight-cache",
