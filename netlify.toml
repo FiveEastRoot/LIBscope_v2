@@ -4,7 +4,7 @@
   functions = "functions"
 
 [functions]
-  included_files = ["*.csv", "*.json"]
+  included_files = ["*.csv", "*.json", "functions/*.cjs"]
 
 [dev]
   command = "npm run dev:vite"
