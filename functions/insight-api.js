@@ -1,7 +1,6 @@
-import { createRequire } from 'node:module';
+import handlerModule from './_shared/insight-handler.cjs';
 
-const require = createRequire(import.meta.url);
-const { handler } = require('./insight-api.cjs');
+const { handler } = handlerModule;
 
 export default async function insightApi(request, context) {
   const url = new URL(request.url);
