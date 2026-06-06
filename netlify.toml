@@ -10,8 +10,3 @@
   command = "npm run dev:vite"
   port = 3000
   targetPort = 5173
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
