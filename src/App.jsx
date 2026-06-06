@@ -305,16 +305,24 @@ function App() {
   const getGenderChartOption = (genderRatio) => {
     if (!genderRatio) return {};
     return {
-      tooltip: { trigger: 'item' },
-      legend: { bottom: '0%', left: 'center' },
+      tooltip: { trigger: 'item', confine: true },
+      legend: {
+        bottom: 0,
+        left: 'center',
+        itemWidth: 18,
+        itemHeight: 10,
+        textStyle: { color: '#64748b', fontSize: 11, fontWeight: 700 }
+      },
       series: [
         {
           name: '성별 인구',
           type: 'pie',
-          radius: ['40%', '70%'],
-          avoidLabelOverlap: false,
+          radius: ['42%', '68%'],
+          center: ['50%', '46%'],
+          avoidLabelOverlap: true,
           itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
-          label: { show: true, formatter: '{b}\n({d}%)' },
+          label: { show: false },
+          labelLine: { show: false },
           data: [
             { value: genderRatio.male, name: '남성', itemStyle: { color: '#8ed6fb' } },
             { value: genderRatio.female, name: '여성', itemStyle: { color: '#fac4d5' } }
