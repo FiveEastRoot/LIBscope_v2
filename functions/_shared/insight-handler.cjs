@@ -1,6 +1,47 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
+
+const axios = {
+  async get(url, options = {}) {
+    const target = new URL(url);
+    if (options.params) {
+      Object.entries(options.params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          target.searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const controller = new AbortController();
+    const timeoutMs = options.timeout || 10000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(target, {
+        method: 'GET',
+        headers: options.headers || {},
+        signal: controller.signal
+      });
+      const text = await response.text();
+      let data = text;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (err) {
+        data = text;
+      }
+
+      if (!response.ok) {
+        const error = new Error(`Request failed with status ${response.status}`);
+        error.response = { status: response.status, data };
+        throw error;
+      }
+
+      return { status: response.status, data };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+};
 
 const INSIGHT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1주일
 const INSIGHT_CACHE_FILE = '/tmp/insight-api-cache.json';
