@@ -156,7 +156,10 @@ async function fetchDistrictSocialIndicators(gu) {
   return {
     multicultural: metric.multicultural || metric.foreignResidents || {},
     disability: metric.disability || {},
+    disabilityGroups: metric.disabilityGroups || metric.disability || {},
     householdTypes: metric.householdTypes || {},
+    nationalityComposition: metric.nationalityComposition || {},
+    registeredForeignerNationalities: metric.registeredForeignerNationalities || {},
     onePersonCount: Number(metric.onePersonCount || 0),
     seoulAvgOnePerson: Number(metric.seoulAvgOnePerson || 0),
     source: metric.source || 'supabase_social_safety_composition',

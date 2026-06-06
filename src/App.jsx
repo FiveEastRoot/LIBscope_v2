@@ -327,7 +327,7 @@ function App() {
   // ECharts 옵션 제너레이터 - 100% 누적 바 차트 (다문화, 장애인, 가구 유형 비율용)
   const getStackedBarOption = (title, dataDict) => {
     if (!dataDict || Object.keys(dataDict).length === 0) return {};
-    const keys = Object.keys(dataDict);
+    const keys = Object.keys(dataDict).sort((a, b) => Number(dataDict[b] || 0) - Number(dataDict[a] || 0));
     const total = Object.values(dataDict).reduce((a, b) => a + b, 0);
 
     const seriesData = keys.map(key => ({
@@ -635,9 +635,9 @@ function App() {
                 </div>
 
                 <div>
-                  <h5 className="text-sm font-bold text-slate-500 mb-2">♿ 장애인 유형 구성</h5>
+                  <h5 className="text-sm font-bold text-slate-500 mb-2">♿ 장애인 대분류 구성</h5>
                   <div className="h-28">
-                    <ReactECharts option={getStackedBarOption('장애', districtData.socialIndicators.disability)} style={{ height: '100%' }} />
+                    <ReactECharts option={getStackedBarOption('장애', districtData.socialIndicators.disabilityGroups || districtData.socialIndicators.disability)} style={{ height: '100%' }} />
                   </div>
                 </div>
 
@@ -645,6 +645,13 @@ function App() {
                   <h5 className="text-sm font-bold text-slate-500 mb-2">🌍 외국인 주민 유형 구성</h5>
                   <div className="h-28">
                     <ReactECharts option={getStackedBarOption('외국인 주민', districtData.socialIndicators.multicultural)} style={{ height: '100%' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <h5 className="text-sm font-bold text-slate-500 mb-2">🌏 등록외국인 국적 구성 (상위 국적)</h5>
+                  <div className="h-28">
+                    <ReactECharts option={getStackedBarOption('국적', districtData.socialIndicators.nationalityComposition)} style={{ height: '100%' }} />
                   </div>
                 </div>
               </div>

@@ -44,6 +44,14 @@ const KOSIS_SOCIAL_TABLES = {
       '15110AA0AM'
     ],
     totalCode: '15110AA000'
+  },
+  registeredForeignersNationality: {
+    orgId: '111',
+    tblId: 'DT_1B040A9C',
+    sourceKey: 'registered_foreigner_nationality_kosis',
+    itemId: 'H001',
+    genderTotalCode: '0',
+    totalCode: 'B001'
   }
 };
 
@@ -76,6 +84,16 @@ const SOURCE_CATALOG_ROWS = [
     source_url: 'https://kosis.kr/openapi/Param/statisticsParameterData.do?orgId=110&tblId=TX_11025_A001_A',
     refresh_cycle: 'annual',
     notes: 'KOSIS OpenAPI / 행정안전부 지방자치단체 외국인주민현황',
+    status: 'active'
+  },
+  {
+    source_key: 'registered_foreigner_nationality_kosis',
+    provider: 'KOSIS',
+    dataset_id: 'DT_1B040A9C',
+    service_name: '시군구별 및 국적(지역)별 등록외국인 현황',
+    source_url: 'https://kosis.kr/openapi/Param/statisticsParameterData.do?orgId=111&tblId=DT_1B040A9C',
+    refresh_cycle: 'annual',
+    notes: 'KOSIS OpenAPI / 법무부 출입국자및체류외국인통계',
     status: 'active'
   },
   {
@@ -461,6 +479,35 @@ function topGuItems(itemMeta, objId = 'A', parentId = '11') {
   return itemMeta.filter(row => row.OBJ_ID === objId && row.UP_ITM_ID === parentId);
 }
 
+function buildDisabilityGroups(disability = {}) {
+  const groupMap = {
+    '신체/운동': ['지체', '뇌병변'],
+    '감각/의사소통': ['시각', '청각', '언어'],
+    '발달': ['지적', '자폐성'],
+    '정신': ['정신'],
+    '내부기관/만성': ['신장', '심장', '호흡기', '간', '장루·요루', '뇌전증'],
+    '기타': ['안면', '기타장애']
+  };
+  return Object.fromEntries(
+    Object.entries(groupMap)
+      .map(([group, labels]) => [
+        group,
+        labels.reduce((sum, label) => sum + number(disability[label]), 0)
+      ])
+      .filter(([, value]) => value > 0)
+  );
+}
+
+function topComposition(values = {}, { limit = 8, totalLabel = '기타' } = {}) {
+  const sorted = Object.entries(values)
+    .filter(([, value]) => Number(value) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  const top = Object.fromEntries(sorted.slice(0, limit));
+  const other = sorted.slice(limit).reduce((sum, [, value]) => sum + Number(value || 0), 0);
+  if (other > 0) top[totalLabel] = other;
+  return top;
+}
+
 async function fetchHouseholdComposition() {
   const table = KOSIS_SOCIAL_TABLES.household;
   const [periodMeta, itemMeta] = await Promise.all([
@@ -575,6 +622,55 @@ async function fetchForeignResidentComposition() {
   return { byGu, period, referenceDate: annualReferenceDate(period) };
 }
 
+async function fetchRegisteredForeignerNationalityComposition() {
+  const table = KOSIS_SOCIAL_TABLES.registeredForeignersNationality;
+  const [periodMeta, itemMeta] = await Promise.all([
+    fetchKosisMetaFor(table, 'PRD'),
+    fetchKosisMetaFor(table, 'ITM')
+  ]);
+  const period = latestAnnualPeriod(periodMeta);
+  const guItems = topGuItems(itemMeta, 'SGG', 'A002');
+  const nationalityCodes = itemMeta
+    .filter(row => row.OBJ_ID === '13101870964A')
+    .map(row => row.ITM_ID);
+  const rows = [];
+  for (const adminChunk of chunk(guItems.map(row => row.ITM_ID), 25)) {
+    for (const nationalityChunk of chunk(nationalityCodes, 60)) {
+      rows.push(...await fetchKosisRows(table, {
+        itmId: table.itemId,
+        objL1: adminChunk.join('+'),
+        objL2: table.genderTotalCode,
+        objL3: nationalityChunk.join('+'),
+        prdSe: 'Y',
+        startPrdDe: period,
+        endPrdDe: period
+      }));
+    }
+  }
+
+  const byGu = new Map();
+  rows.forEach(row => {
+    const metric = byGu.get(row.C1_NM) || {
+      registeredForeignerNationalities: {},
+      nationalityComposition: {},
+      totalRegisteredForeigners: 0
+    };
+    const value = number(row.DT);
+    if (row.C3 === table.totalCode) metric.totalRegisteredForeigners = value;
+    else if (row.C3_NM && value > 0) metric.registeredForeignerNationalities[row.C3_NM] = value;
+    byGu.set(row.C1_NM, metric);
+  });
+
+  byGu.forEach(metric => {
+    metric.nationalityComposition = topComposition(metric.registeredForeignerNationalities, {
+      limit: 8,
+      totalLabel: '기타 국적'
+    });
+  });
+
+  return { byGu, period, referenceDate: annualReferenceDate(period) };
+}
+
 function buildDistrictSocialRowsFromCsv() {
   const rows = readCSV('district_data_combined.csv');
   const onePersonValues = rows.map(row => number(row['1인가구']));
@@ -610,7 +706,9 @@ function buildDistrictSocialRowsFromCsv() {
     const metric = {
       householdTypes,
       disability,
+      disabilityGroups: buildDisabilityGroups(disability),
       multicultural,
+      nationalityComposition: topComposition(multicultural, { limit: 8, totalLabel: '기타 국적' }),
       onePersonCount: number(row['1인가구']),
       seoulAvgOnePerson,
       source: 'csv_social_safety_fallback',
@@ -633,13 +731,14 @@ function buildDistrictSocialRowsFromCsv() {
 async function buildKosisSocialRows() {
   if (!process.env.KOSIS_API_KEY) return null;
 
-  const [household, disability, foreignResidents] = await Promise.all([
+  const [household, disability, foreignResidents, registeredNationality] = await Promise.all([
     fetchHouseholdComposition(),
     fetchDisabilityComposition(),
-    fetchForeignResidentComposition()
+    fetchForeignResidentComposition(),
+    fetchRegisteredForeignerNationalityComposition()
   ]);
 
-  const referenceDate = [household.referenceDate, disability.referenceDate, foreignResidents.referenceDate]
+  const referenceDate = [household.referenceDate, disability.referenceDate, foreignResidents.referenceDate, registeredNationality.referenceDate]
     .filter(Boolean)
     .sort()
     .at(0);
@@ -648,24 +747,30 @@ async function buildKosisSocialRows() {
     const house = household.byGu.get(gu) || {};
     const disabled = disability.byGu.get(gu) || {};
     const foreign = foreignResidents.byGu.get(gu) || {};
+    const nationality = registeredNationality.byGu.get(gu) || {};
     const metric = {
       householdTypes: house.householdTypes || {},
       disability: disabled.disability || {},
+      disabilityGroups: buildDisabilityGroups(disabled.disability || {}),
       multicultural: foreign.foreignResidents || {},
       foreignResidents: foreign.foreignResidents || {},
+      nationalityComposition: nationality.nationalityComposition || {},
+      registeredForeignerNationalities: nationality.registeredForeignerNationalities || {},
       onePersonCount: house.householdTypes?.['1인가구'] || 0,
       seoulAvgOnePerson: household.seoulAvgOnePerson,
       totalHouseholds: house.totalHouseholds || 0,
       totalDisabled: disabled.totalDisabled || 0,
       totalForeignResidents: foreign.totalForeignResidents || 0,
+      totalRegisteredForeigners: nationality.totalRegisteredForeigners || 0,
       averageHouseholdSize: house.averageHouseholdSize || 0,
       source: 'kosis_social_safety_composition',
-      sourceLabel: 'KOSIS 2024 가구/장애/외국인주민',
+      sourceLabel: 'KOSIS 2024 가구/장애/외국인주민/등록외국인',
       referenceDate,
       periods: {
         household: household.period,
         disability: disability.period,
-        foreignResidents: foreignResidents.period
+        foreignResidents: foreignResidents.period,
+        registeredForeignerNationality: registeredNationality.period
       }
     };
 

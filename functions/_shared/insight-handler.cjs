@@ -151,6 +151,35 @@ function getCachedResponse(cacheKey) {
   return null;
 }
 
+function groupDisabilityTypes(disability = {}) {
+  const groupMap = {
+    '신체/운동': ['지체', '뇌병변'],
+    '감각/의사소통': ['시각', '청각', '언어'],
+    '발달': ['지적', '자폐성'],
+    '정신': ['정신'],
+    '내부기관/만성': ['신장', '심장', '호흡기', '간', '장루·요루', '뇌전증'],
+    '기타': ['안면', '기타장애']
+  };
+  return Object.fromEntries(
+    Object.entries(groupMap)
+      .map(([group, labels]) => [
+        group,
+        labels.reduce((sum, label) => sum + Number(disability[label] || 0), 0)
+      ])
+      .filter(([, value]) => value > 0)
+  );
+}
+
+function topComposition(values = {}, limit = 8, otherLabel = '기타') {
+  const sorted = Object.entries(values)
+    .filter(([, value]) => Number(value) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  const top = Object.fromEntries(sorted.slice(0, limit));
+  const other = sorted.slice(limit).reduce((sum, [, value]) => sum + Number(value || 0), 0);
+  if (other > 0) top[otherLabel] = other;
+  return top;
+}
+
 // 하버사인 거리 계산 함수 (단위: m)
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000; // 지구 반지름
@@ -950,7 +979,10 @@ exports.handler = async (event, context) => {
         socialIndicators: supabaseSocialIndicators || {
           multicultural,
           disability,
+          disabilityGroups: groupDisabilityTypes(disability),
           householdTypes,
+          nationalityComposition: topComposition(multicultural, 8, '기타 국적'),
+          registeredForeignerNationalities: multicultural,
           onePersonCount: parseInt(guCombined['1인가구'] || 0),
           seoulAvgOnePerson: Math.round(seoulAvgOnePerson),
           source: 'csv_social_safety_fallback',
