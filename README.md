@@ -93,6 +93,7 @@ npm run seed:supabase
 필요 환경변수:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `KOSIS_API_KEY` (있으면 주민등록인구를 KOSIS 최신 월자료로 적재, 없으면 기존 CSV fallback)
 
 현재 seed 대상:
 - `library_profiles`: 도서관 215개 기본 프로필

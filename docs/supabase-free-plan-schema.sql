@@ -144,6 +144,16 @@ insert into public.source_catalog (
   notes
 ) values
   (
+    'resident_population_kosis',
+    'kosis',
+    'DT_1B04005N',
+    'statisticsParameterData.do',
+    'https://kosis.kr/statisticsList/mass/mass_list.jsp?list_id=A_7&org_id=101&process=statHtml&tbl_id=DT_1B04005N&vw_cd=MT_ZTITLE',
+    'monthly',
+    'confirmed',
+    'Resident registration population by eup/myeon/dong and five-year age groups. Replaces CSV seed for resident population metrics.'
+  ),
+  (
     'resident_population_dong',
     'seoul_open_data',
     'OA-877',

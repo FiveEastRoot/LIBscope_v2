@@ -48,12 +48,13 @@ async function supabaseFetch(table, params = {}) {
 function rowsToPopulationSummary(rows, source) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
+  const firstMetric = rows[0]?.metric_json || {};
   const summary = {
     ageDistribution: {},
     genderRatio: { male: 0, female: 0 },
     total: 0,
-    source,
-    referenceDate: null,
+    source: firstMetric.source || source,
+    referenceDate: firstMetric.referenceDate || null,
     matchedDongs: [],
     missingDongs: []
   };

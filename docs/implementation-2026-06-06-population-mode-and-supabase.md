@@ -60,6 +60,7 @@ populationModes: {
 
 - Supabase project-bound MCP 연결로 `initial_public_metrics_schema`, `tighten_public_metrics_grants` 마이그레이션을 적용했습니다.
 - 서버 함수는 `SUPABASE_URL`과 `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_ANON_KEY`가 있으면 주민등록인구와 수급 지표를 Supabase에서 우선 조회하고, 실패 시 기존 CSV fallback을 사용합니다.
-- 기존 정적 데이터를 Supabase에 적재하는 `npm run seed:supabase` 스크립트를 추가했습니다. 로컬 `.env`에는 아직 Supabase 서버 키가 없어 실제 seed 실행은 보류 상태입니다.
-- 주민등록인구는 seed 후 Supabase 값을 우선 사용합니다. 이후 `OA-877`/`OA-12240` 또는 확정 API를 주 1회 수집해 seed 기반 값을 대체해야 합니다.
+- 기존 정적 데이터를 Supabase에 적재하는 `npm run seed:supabase` 스크립트를 추가했습니다.
+- `KOSIS_API_KEY`가 있으면 주민등록인구는 KOSIS `DT_1B04005N` 최신 월자료를 우선 수집해 Supabase에 적재합니다. API 실패 또는 키 미설정 시 기존 CSV fallback을 사용합니다.
+- 2026-06-07 기준 KOSIS `2026.05` 월자료를 적재해 강남구 주민등록인구는 `552,962`, source는 `resident_population_kosis`로 전환했습니다.
 - 외국인 주민 지표는 화면/정의는 확정했지만, 실제 데이터는 아직 기존 fallback 컬럼을 사용합니다. `OA-13926` 기반 수집으로 교체해야 합니다.
