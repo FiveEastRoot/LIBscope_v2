@@ -437,10 +437,10 @@ function App() {
     const categories = ageGroupOrder.filter(label => ageDistribution[label] !== undefined);
     const data = categories.map(label => ageDistribution[label]);
     
-    // 고령층(65세 이상) 컬럼은 주황색, 나머지는 하늘색 강조
+    // 고령층(65세 이상) 컬럼은 붉은색, 나머지는 하늘색으로 구분
     const colors = categories.map(cat => {
       const ageNum = parseInt(cat.replace(/[^0-9]/g, ''));
-      return ageNum >= 65 ? '#ff9f43' : '#54a0ff';
+      return ageNum >= 65 ? '#ef4444' : '#54a0ff';
     });
 
     return {
