@@ -176,7 +176,14 @@ const cultureEnjoymentReference2024 = [
       chip: 'text-blue-600 bg-white/70 border-blue-100',
       barBg: 'bg-blue-100',
       bar: 'bg-blue-500',
-      baseText: 'text-blue-500/80'
+      baseText: 'text-blue-500/80',
+      lowHighlight: 'bg-white/75 border-dashed border-blue-300/80',
+      lowMarker: 'bg-blue-200',
+      lowValue: 'bg-white/80 text-blue-500 border-dashed border-blue-200',
+      highHighlight: 'bg-white/95 border-blue-200/80',
+      highRail: 'bg-blue-500',
+      highTopLine: 'bg-blue-200',
+      highValue: 'bg-blue-50 text-blue-700 border-blue-100'
     },
     denominator: '조사대상: 서울 거주 만 15세 이상 일반 시민, 표본 5,211명',
     items: [
@@ -204,7 +211,14 @@ const cultureEnjoymentReference2024 = [
       chip: 'text-emerald-600 bg-white/70 border-emerald-100',
       barBg: 'bg-emerald-100',
       bar: 'bg-emerald-500',
-      baseText: 'text-emerald-500/80'
+      baseText: 'text-emerald-500/80',
+      lowHighlight: 'bg-white/75 border-dashed border-emerald-300/80',
+      lowMarker: 'bg-emerald-200',
+      lowValue: 'bg-white/80 text-emerald-500 border-dashed border-emerald-200',
+      highHighlight: 'bg-white/95 border-emerald-200/80',
+      highRail: 'bg-emerald-500',
+      highTopLine: 'bg-emerald-200',
+      highValue: 'bg-emerald-50 text-emerald-700 border-emerald-100'
     },
     denominator: '조사대상: 서울 거주 문화 관심층, 표본 4,053명',
     items: [
@@ -233,7 +247,14 @@ const cultureEnjoymentReference2024 = [
       chip: 'text-rose-600 bg-white/70 border-rose-100',
       barBg: 'bg-rose-100',
       bar: 'bg-rose-500',
-      baseText: 'text-rose-500/80'
+      baseText: 'text-rose-500/80',
+      lowHighlight: 'bg-white/75 border-dashed border-rose-300/80',
+      lowMarker: 'bg-rose-200',
+      lowValue: 'bg-white/80 text-rose-500 border-dashed border-rose-200',
+      highHighlight: 'bg-white/95 border-rose-200/80',
+      highRail: 'bg-rose-500',
+      highTopLine: 'bg-rose-200',
+      highValue: 'bg-rose-50 text-rose-700 border-rose-100'
     },
     denominator: '조사대상: 서울 거주 장애인, 표본 755명',
     items: [
@@ -265,13 +286,13 @@ const ageGroupOrder = [
   '70세 이상'
 ];
 
-const getCultureReferenceHighlightClass = (item) => {
+const getCultureReferenceHighlightClass = (item, theme) => {
   if (item.unit !== '%') return 'bg-white/80 border-current/10';
   if (item.value < 10) {
-    return 'bg-gradient-to-br from-white via-white to-slate-100/90 border-current/30 shadow-inner';
+    return theme.lowHighlight;
   }
   if (item.value > 50) {
-    return 'bg-white/90 border-current/20 shadow-[0_0_24px_rgba(59,130,246,0.14)]';
+    return theme.highHighlight;
   }
   return 'bg-white/80 border-current/10';
 };
@@ -1229,10 +1250,16 @@ function App() {
                       {activeCultureReference.items.map(item => (
                         <div
                           key={`${activeCultureReference.key}-${item.label}-${item.value}`}
-                          className={`relative overflow-visible rounded-xl border p-3 text-current ${getCultureReferenceHighlightClass(item)}`}
+                          className={`relative overflow-hidden rounded-xl border p-3 text-current ${getCultureReferenceHighlightClass(item, activeCultureReference.theme)}`}
                         >
                           {item.unit === '%' && item.value > 50 && (
-                            <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-current opacity-10 blur-lg" />
+                            <>
+                              <div className={`pointer-events-none absolute left-0 top-0 h-full w-1 ${activeCultureReference.theme.highRail}`} />
+                              <div className={`pointer-events-none absolute left-0 right-0 top-0 h-0.5 ${activeCultureReference.theme.highTopLine}`} />
+                            </>
+                          )}
+                          {item.unit === '%' && item.value < 10 && (
+                            <div className={`pointer-events-none absolute bottom-0 left-3 h-1 w-16 rounded-t-full ${activeCultureReference.theme.lowMarker}`} />
                           )}
                           <div className="relative">
                           <div className="flex items-start justify-between gap-3">
@@ -1240,7 +1267,13 @@ function App() {
                               <p className={`text-[10px] font-extrabold ${activeCultureReference.theme.text}`}>{activeCultureReference.label}</p>
                               <p className="text-xs font-bold text-slate-700 mt-1">{item.label}</p>
                             </div>
-                            <p className="text-lg font-extrabold text-slate-900 shrink-0">
+                            <p className={`text-lg font-extrabold shrink-0 ${
+                              item.unit === '%' && item.value > 50
+                                ? `rounded-full border px-2 py-0.5 ${activeCultureReference.theme.highValue}`
+                                : item.unit === '%' && item.value < 10
+                                  ? `rounded-full border px-2 py-0.5 ${activeCultureReference.theme.lowValue}`
+                                : 'text-slate-900'
+                            }`}>
                               {item.value.toFixed(1)}{item.unit}
                             </p>
                           </div>
