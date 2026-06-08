@@ -977,7 +977,8 @@ exports.handler = async (event, context) => {
           denominator: 'resident_population'
         },
         socialIndicators: supabaseSocialIndicators || {
-          multicultural,
+          multicultural: {},
+          foreignResidents: {},
           disability,
           disabilityGroups: groupDisabilityTypes(disability),
           householdTypes,
@@ -985,6 +986,7 @@ exports.handler = async (event, context) => {
           registeredForeignerNationalities: multicultural,
           onePersonCount: parseInt(guCombined['1인가구'] || 0),
           seoulAvgOnePerson: Math.round(seoulAvgOnePerson),
+          totalRegisteredForeigners: Object.values(multicultural).reduce((sum, value) => sum + Number(value || 0), 0),
           source: 'csv_social_safety_fallback',
           sourceLabel: '서울시 자치구 통계 CSV fallback',
           referenceDate: null

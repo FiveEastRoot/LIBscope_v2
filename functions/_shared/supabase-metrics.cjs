@@ -162,6 +162,12 @@ async function fetchDistrictSocialIndicators(gu) {
     registeredForeignerNationalities: metric.registeredForeignerNationalities || {},
     onePersonCount: Number(metric.onePersonCount || 0),
     seoulAvgOnePerson: Number(metric.seoulAvgOnePerson || 0),
+    totalHouseholds: Number(metric.totalHouseholds || 0),
+    totalDisabled: Number(metric.totalDisabled || 0),
+    totalForeignResidents: Number(metric.totalForeignResidents || 0),
+    totalRegisteredForeigners: Number(metric.totalRegisteredForeigners || 0),
+    averageHouseholdSize: Number(metric.averageHouseholdSize || 0),
+    periods: metric.periods || {},
     source: metric.source || 'supabase_social_safety_composition',
     sourceLabel: metric.sourceLabel || 'Supabase 사회안전망 구성',
     referenceDate: metric.referenceDate || rows[0].reference_date || null

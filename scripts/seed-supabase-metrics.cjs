@@ -105,6 +105,16 @@ const SOURCE_CATALOG_ROWS = [
     refresh_cycle: 'manual',
     notes: 'Legacy static fallback',
     status: 'fallback'
+  },
+  {
+    source_key: 'culture_enjoyment_2023_report',
+    provider: 'seoul_culture_foundation',
+    dataset_id: '2023_seoul_culture_indicators',
+    service_name: '2023 서울문화지표 조사연구',
+    source_url: '2023 서울문화지표 조사연구.pdf',
+    refresh_cycle: 'static_report',
+    notes: '자치구별 문화자원·문화정책 정적 지표. 일부 향유/예산 필드는 후속 검수 필요.',
+    status: 'fallback'
   }
 ];
 
@@ -707,10 +717,13 @@ function buildDistrictSocialRowsFromCsv() {
       householdTypes,
       disability,
       disabilityGroups: buildDisabilityGroups(disability),
-      multicultural,
+      multicultural: {},
+      foreignResidents: {},
       nationalityComposition: topComposition(multicultural, { limit: 8, totalLabel: '기타 국적' }),
+      registeredForeignerNationalities: multicultural,
       onePersonCount: number(row['1인가구']),
       seoulAvgOnePerson,
+      totalRegisteredForeigners: Object.values(multicultural).reduce((sum, value) => sum + Number(value || 0), 0),
       source: 'csv_social_safety_fallback',
       sourceLabel: 'CSV fallback',
       referenceDate: null
@@ -726,6 +739,38 @@ function buildDistrictSocialRowsFromCsv() {
       source_key: 'social_safety_csv'
     };
   });
+}
+
+function normalizeMetricJsonValue(value) {
+  if (value === '') return null;
+  const numeric = Number(String(value).replace(/,/g, ''));
+  return Number.isFinite(numeric) && String(value).trim() !== '' ? numeric : value;
+}
+
+function buildCultureEnjoymentRows() {
+  const rows = readCSV('district_culture_enjoyment_metrics.csv');
+  const metricRows = rows
+    .filter(row => row.gu)
+    .map(row => {
+      const metricJson = Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key, normalizeMetricJsonValue(value)])
+      );
+      return {
+        gu: row.gu,
+        metric_key: 'culture_enjoyment_profile',
+        population_mode: null,
+        metric_value: number(row.public_culture_facilities),
+        metric_json: metricJson,
+        denominator_key: null,
+        reference_date: '2023-12-31',
+        source_key: 'culture_enjoyment_2023_report'
+      };
+    });
+
+  if (metricRows.length !== 25) {
+    throw new Error(`Unexpected culture enjoyment row count: ${metricRows.length}`);
+  }
+  return metricRows;
 }
 
 async function buildKosisSocialRows() {
@@ -910,13 +955,14 @@ async function main() {
 
   const districtWelfare = buildDistrictWelfareRows();
   const dongWelfare = buildDongWelfareRows();
+  const cultureEnjoyment = buildCultureEnjoymentRows();
   const libraryProfiles = buildLibraryProfiles();
 
   await upsertRows('source_catalog', SOURCE_CATALOG_ROWS, 'source_key');
   await upsertRows('library_profiles', libraryProfiles, 'library_id');
-  await deleteMetricRows('district_metrics', ['resident_population_age_gender', 'welfare_recipient_rate', 'social_safety_composition']);
+  await deleteMetricRows('district_metrics', ['resident_population_age_gender', 'welfare_recipient_rate', 'social_safety_composition', 'culture_enjoyment_profile']);
   await deleteMetricRows('dong_metrics', ['resident_population_age_gender', 'welfare_recipients']);
-  await insertRows('district_metrics', [...districtPopulation, ...districtWelfare, ...districtSocial]);
+  await insertRows('district_metrics', [...districtPopulation, ...districtWelfare, ...districtSocial, ...cultureEnjoyment]);
   await insertRows('dong_metrics', [...dongPopulation, ...dongWelfare]);
   await request('refresh_runs', {
     method: 'POST',
@@ -925,7 +971,7 @@ async function main() {
       status: 'success',
       started_at: startedAt,
       finished_at: new Date().toISOString(),
-      item_count: libraryProfiles.length + districtPopulation.length + dongPopulation.length + districtWelfare.length + dongWelfare.length + districtSocial.length,
+      item_count: libraryProfiles.length + districtPopulation.length + dongPopulation.length + districtWelfare.length + dongWelfare.length + districtSocial.length + cultureEnjoyment.length,
       error_message: `resident_population_source=${populationSource};social_safety_source=${socialSource}`
     }]
   });
