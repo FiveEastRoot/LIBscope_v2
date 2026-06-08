@@ -141,6 +141,11 @@ function rowsToPopulationSummary(rows, source) {
   summary.genderRatio.female = Math.round(summary.genderRatio.female);
   summary.total = Math.round(summary.total || summary.genderRatio.male + summary.genderRatio.female);
   summary.ageDistribution = normalizeFiveYearAgeDistribution(summary.ageDistribution);
+  const ageTotal = Object.values(summary.ageDistribution).reduce((sum, value) => sum + Number(value || 0), 0);
+  const missingSeniorPopulation = summary.total - ageTotal;
+  if (missingSeniorPopulation > 0 && summary.source === 'SPOP_LOCAL_RESD_DONG') {
+    summary.ageDistribution['70세 이상'] = (summary.ageDistribution['70세 이상'] || 0) + missingSeniorPopulation;
+  }
 
   return summary;
 }
