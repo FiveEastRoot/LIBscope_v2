@@ -173,6 +173,11 @@ const foreignResidentTypeOrder = [
   '유학생'
 ];
 
+const ageGroupOrder = [
+  ...Array.from({ length: 20 }, (_, index) => `${index * 5}-${index * 5 + 4}세`),
+  '100세 이상'
+];
+
 function PopulationModeToggle({ populationMode, onChange }) {
   return (
     <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1">
@@ -429,8 +434,8 @@ function App() {
   // ECharts 옵션 제너레이터 - 연령대별 인구 분포
   const getAgeChartOption = (ageDistribution) => {
     if (!ageDistribution) return {};
-    const categories = Object.keys(ageDistribution);
-    const data = Object.values(ageDistribution);
+    const categories = ageGroupOrder.filter(label => ageDistribution[label] !== undefined);
+    const data = categories.map(label => ageDistribution[label]);
     
     // 고령층(65세 이상) 컬럼은 주황색, 나머지는 하늘색 강조
     const colors = categories.map(cat => {

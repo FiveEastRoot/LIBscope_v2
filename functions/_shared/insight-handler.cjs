@@ -454,6 +454,70 @@ function rowToPopulationSummary(summary, row, dongName) {
   }
 }
 
+function normalizeFiveYearAgeDistribution(ageDistribution = {}) {
+  const result = {};
+  const addValue = (label, value) => {
+    result[label] = (result[label] || 0) + value;
+  };
+
+  Object.entries(ageDistribution).forEach(([label, rawValue]) => {
+    const value = parsePopulationNumber(rawValue);
+    if (!value || label === '총인구') return;
+
+    const range = String(label).match(/^(\d{1,3})-(\d{1,3})세$/);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      if (start >= 100) {
+        addValue('100세 이상', value);
+        return;
+      }
+
+      const buckets = [];
+      for (let bucketStart = Math.floor(start / 5) * 5; bucketStart <= end && bucketStart < 100; bucketStart += 5) {
+        const bucketEnd = bucketStart + 4;
+        const overlapStart = Math.max(start, bucketStart);
+        const overlapEnd = Math.min(end, bucketEnd);
+        const overlapYears = Math.max(0, overlapEnd - overlapStart + 1);
+        if (overlapYears > 0) {
+          buckets.push({ label: `${bucketStart}-${bucketEnd}세`, years: overlapYears });
+        }
+      }
+
+      const totalYears = buckets.reduce((sum, bucket) => sum + bucket.years, 0);
+      buckets.forEach(bucket => {
+        addValue(bucket.label, value * (bucket.years / totalYears));
+      });
+      return;
+    }
+
+    const over = String(label).match(/^(\d{1,3})세 이상$/);
+    if (over) {
+      const start = Number(over[1]);
+      if (start >= 100) addValue('100세 이상', value);
+      else {
+        const buckets = [];
+        for (let bucketStart = start; bucketStart < 100; bucketStart += 5) {
+          buckets.push(`${bucketStart}-${bucketStart + 4}세`);
+        }
+        buckets.push('100세 이상');
+        buckets.forEach(bucket => addValue(bucket, value / buckets.length));
+      }
+      return;
+    }
+
+    addValue(label, value);
+  });
+
+  const ordered = {};
+  for (let start = 0; start < 100; start += 5) {
+    const label = `${start}-${start + 4}세`;
+    if (result[label]) ordered[label] = Math.round(result[label]);
+  }
+  if (result['100세 이상']) ordered['100세 이상'] = Math.round(result['100세 이상']);
+  return ordered;
+}
+
 function finalizePopulationSummary(summary) {
   summary.genderRatio.male = Math.round(summary.genderRatio.male);
   summary.genderRatio.female = Math.round(summary.genderRatio.female);
@@ -461,9 +525,7 @@ function finalizePopulationSummary(summary) {
     summary.total = summary.genderRatio.male + summary.genderRatio.female;
   }
   summary.total = Math.round(summary.total);
-  Object.keys(summary.ageDistribution).forEach(key => {
-    summary.ageDistribution[key] = Math.round(summary.ageDistribution[key]);
-  });
+  summary.ageDistribution = normalizeFiveYearAgeDistribution(summary.ageDistribution);
   summary.missingDongs = [...new Set(summary.missingDongs)];
 }
 
