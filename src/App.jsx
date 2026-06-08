@@ -167,35 +167,52 @@ const cultureEnjoymentReference2024 = [
   {
     key: 'general',
     label: '일반 시민',
-    denominator: '분모: 2024 서울시민 문화향유 실태조사 일반 시민 응답자',
+    denominator: '조사대상: 서울 거주 만 15세 이상 일반 시민, 표본 5,211명',
     items: [
-      { label: '축제·행사 참여', value: 31.4, unit: '%', note: '지역 축제·문화행사 참여 경험', display: 'bar' },
-      { label: '문화예술교육 참여', value: 13.9, unit: '%', note: '문화예술 교육 프로그램 참여', display: 'bar' },
-      { label: '동호회 참여', value: 10.9, unit: '%', note: '지역 기반 문화·예술 동호회 참여', display: 'bar' },
-      { label: '소규모 지역행사 참여', value: 18.1, unit: '%', note: '작은 지역문화 행사 참여 경험', display: 'bar' },
-      { label: '소규모 지역행사 참여 의향', value: 49.9, unit: '%', note: '향후 작은 지역문화 행사 참여 의향', display: 'bar' }
+      { label: '생활권에서 문화활동', value: 43.3, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '문화예술 관람/참여/교육 활동을 생활권에서 주로 함', display: 'bar' },
+      { label: '도서관 문화정보 경험', value: 52.8, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '도서관 이용을 통해 지역사회 문화예술 정보를 접한 경험', display: 'bar' },
+      { label: '정보 기반 실제 참여', value: 61.4, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관에서 접한 정보를 통해 실제 문화예술 활동에 참여한 경험', display: 'bar' },
+      { label: '축제·행사 참여', value: 31.4, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 활동 중 지역 축제 및 행사', display: 'bar' },
+      { label: '문화예술 관람 프로그램 참여', value: 19.6, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술 관람 프로그램', display: 'bar' },
+      { label: '문화예술교육 참여', value: 13.9, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술교육', display: 'bar' },
+      { label: '동호회 참여', value: 10.9, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 지역 모임/동아리 활동', display: 'bar' },
+      { label: '지역사회 관심도 증가', value: 69.1, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관 정보로 지역사회 관심이 커졌다는 응답', display: 'bar' },
+      { label: '소규모 지역행사 참여', value: 18.1, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '거주지 주변 소규모 문화행사 참여 경험', display: 'bar' },
+      { label: '소규모 지역행사 참여 의향', value: 49.9, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' }
     ]
   },
   {
     key: 'culture_interest',
     label: '문화 관심층',
-    denominator: '분모: 2024 서울시민 문화향유 실태조사 문화 관심층 응답자',
+    denominator: '조사대상: 서울 거주 문화 관심층, 표본 4,053명',
     items: [
-      { label: '축제·행사 참여', value: 36.6, unit: '%', note: '문화 관심층의 지역 축제·문화행사 참여 경험', display: 'bar' },
-      { label: '문화예술 프로그램 관람', value: 30.8, unit: '%', note: '문화 관심층의 문화예술 프로그램 관람 경험', display: 'bar' },
-      { label: '문화예술교육 참여', value: 21.1, unit: '%', note: '문화 관심층의 문화예술 교육 프로그램 참여', display: 'bar' },
-      { label: '동호회 참여', value: 8.4, unit: '%', note: '문화 관심층의 문화·예술 동호회 참여', display: 'bar' },
-      { label: '소규모 지역행사 참여', value: 30.0, unit: '%', note: '작은 지역문화 행사 참여 경험', display: 'bar' },
-      { label: '소규모 지역행사 참여 의향', value: 76.0, unit: '%', note: '향후 작은 지역문화 행사 참여 의향', display: 'bar' }
+      { label: '생활권 외 활동 탐색', value: 70.7, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '생활권 밖이어도 원하는 문화활동이 있는 곳을 찾아감', display: 'bar' },
+      { label: '생활권에서 문화활동', value: 26.3, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '문화예술 관람/참여/교육 활동을 생활권에서 주로 함', display: 'bar' },
+      { label: '도서관 문화정보 경험', value: 68.9, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '도서관 이용을 통해 지역사회 문화예술 정보를 접한 경험', display: 'bar' },
+      { label: '정보 기반 실제 참여', value: 68.8, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관에서 접한 정보를 통해 실제 문화예술 활동에 참여한 경험', display: 'bar' },
+      { label: '축제·행사 참여', value: 36.6, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 지역 축제 및 행사', display: 'bar' },
+      { label: '문화예술 관람 프로그램 참여', value: 30.8, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술 관람 프로그램', display: 'bar' },
+      { label: '문화예술교육 참여', value: 21.1, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술교육', display: 'bar' },
+      { label: '동호회 참여', value: 8.4, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 지역 모임/동아리 활동', display: 'bar' },
+      { label: '지역사회 관심도 증가', value: 78.6, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관 정보로 지역사회 관심이 커졌다는 응답', display: 'bar' },
+      { label: '소규모 지역행사 참여', value: 30.0, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '거주지 주변 소규모 문화행사 참여 경험', display: 'bar' },
+      { label: '소규모 지역행사 참여 의향', value: 76.0, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' }
     ]
   },
   {
     key: 'disabled',
     label: '장애인',
-    denominator: '분모: 2024 서울시민 문화향유 실태조사 장애인 응답자',
+    denominator: '조사대상: 서울 거주 장애인, 표본 755명',
     items: [
-      { label: '소규모 지역행사 참여', value: 2.4, unit: '%', note: '장애인 응답자의 작은 지역문화 행사 참여 경험', display: 'bar' },
-      { label: '소규모 지역행사 참여 의향', value: 35.2, unit: '%', note: '장애인 응답자의 향후 지역행사 참여 의향', display: 'bar' }
+      { label: '오프라인 문화예술 연간 관람률', value: 35.5, unit: '%', base: '전체 장애인 응답자 n=755', note: '최근 1년간 오프라인 문화예술 활동 경험', display: 'bar' },
+      { label: '연간 오프라인 활동 횟수', value: 3.7, unit: '회', base: '오프라인 문화예술 활동 경험자', note: '최근 1년간 오프라인 활동 총 횟수', display: 'number' },
+      { label: '연간 관람 비용', value: 6.8, unit: '만원', base: '오프라인 문화예술 활동 지불 경험자', note: '최근 1년간 본인 지불 관람 총 비용', display: 'number' },
+      { label: '도서관 문화정보 경험 - 지체장애', value: 30.8, unit: '%', base: '지체장애 응답자', note: '도서관 이용을 통해 지역사회 문화예술 정보를 접한 경험', display: 'bar' },
+      { label: '정보 기반 실제 참여 - 청각장애', value: 52.8, unit: '%', base: '청각장애 중 도서관 지역문화예술 정보 경험자', note: '도서관 정보를 통해 실제 문화예술 활동에 참여한 경험', display: 'bar' },
+      { label: '지역사회 관심도 증가 - 지체장애', value: 75.9, unit: '%', base: '지체장애 중 도서관 지역문화예술 정보 경험자', note: '도서관 정보로 지역사회 관심이 커졌다는 응답', display: 'bar' },
+      { label: '소규모 지역행사 참여 - 시각장애', value: 2.6, unit: '%', base: '시각장애 응답자', note: '거주지 주변 소규모 문화행사 참여 경험', display: 'bar' },
+      { label: '소규모 지역행사 참여 의향 - 청각장애', value: 38.9, unit: '%', base: '청각장애 응답자', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' },
+      { label: '소규모 지역행사 참여 의향 - 지체장애', value: 36.5, unit: '%', base: '지체장애 응답자', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' }
     ]
   }
 ];
@@ -1183,6 +1200,7 @@ function App() {
                               <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(item.value, 100)}%` }} />
                             </div>
                           )}
+                          <p className="text-[10px] text-blue-500/80 mt-2 leading-relaxed">분모: {item.base}</p>
                           <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">{item.note}</p>
                         </div>
                       ))}
