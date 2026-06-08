@@ -582,6 +582,29 @@ function App() {
       }));
   };
 
+  const aggregateNationalityComposition = (dataDict, { minValue = 100, maxItems = 7 } = {}) => {
+    if (!dataDict) return { chartData: {}, otherItems: [] };
+    const sortedItems = Object.entries(dataDict)
+      .map(([name, value]) => ({ name, value: Number(value || 0) }))
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+
+    const visibleItems = [];
+    const otherItems = [];
+    sortedItems.forEach((item, index) => {
+      if (index < maxItems && item.value >= minValue) {
+        visibleItems.push(item);
+      } else {
+        otherItems.push(item);
+      }
+    });
+
+    const chartData = Object.fromEntries(visibleItems.map(item => [item.name, item.value]));
+    const otherTotal = otherItems.reduce((sum, item) => sum + item.value, 0);
+    if (otherTotal > 0) chartData['기타 국적'] = otherTotal;
+    return { chartData, otherItems };
+  };
+
   const renderCompositionItems = (items) => (
     <div className="space-y-3">
       {items.map(item => (
@@ -1180,13 +1203,17 @@ function App() {
                         title: '외국인 주민 유형',
                         description: '외국국적동포, 기타외국인, 외국인주민자녀(출생), 외국인근로자, 결혼이민자, 한국국적취득자, 유학생 기준 구성입니다.',
                         label: '외국인 주민',
-                        data: activeSocialSafetySection.residentData
+                        data: activeSocialSafetySection.residentData,
+                        otherItems: []
                       },
                       {
                         title: '외국인 국적 유형',
                         description: '등록외국인을 국적 기준으로 나눈 구성입니다.',
                         label: '국적',
-                        data: activeSocialSafetySection.nationalityData
+                        ...(() => {
+                          const nationality = aggregateNationalityComposition(activeSocialSafetySection.nationalityData);
+                          return { data: nationality.chartData, otherItems: nationality.otherItems };
+                        })()
                       }
                     ].filter(panel => panel.data && Object.keys(panel.data).length > 0).map(panel => (
                       <div key={panel.title} className="bg-slate-50 border border-slate-100 rounded-2xl p-5">
@@ -1208,6 +1235,11 @@ function App() {
                         <div className="mt-5 bg-white border border-slate-100 rounded-2xl p-4">
                           <h6 className="font-extrabold text-sm text-slate-800 mb-4">구성 항목</h6>
                           {renderCompositionItems(getTopCompositionItems(panel.data, 8))}
+                          {panel.otherItems.length > 0 && (
+                            <p className="text-[10px] leading-relaxed text-slate-400 mt-4">
+                              기타 국적 포함: {panel.otherItems.map(item => `${item.name} ${item.value.toLocaleString()}명`).join(', ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ))}
