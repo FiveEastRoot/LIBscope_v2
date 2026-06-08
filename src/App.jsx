@@ -582,7 +582,7 @@ function App() {
       }));
   };
 
-  const aggregateNationalityComposition = (dataDict, { minValue = 100, maxItems = 7 } = {}) => {
+  const aggregateNationalityComposition = (dataDict, { minValue = 100 } = {}) => {
     if (!dataDict) return { chartData: {}, otherItems: [] };
     const sortedItems = Object.entries(dataDict)
       .map(([name, value]) => ({ name, value: Number(value || 0) }))
@@ -591,8 +591,8 @@ function App() {
 
     const visibleItems = [];
     const otherItems = [];
-    sortedItems.forEach((item, index) => {
-      if (index < maxItems && item.value >= minValue) {
+    sortedItems.forEach((item) => {
+      if (item.value > minValue) {
         visibleItems.push(item);
       } else {
         otherItems.push(item);
