@@ -174,7 +174,9 @@ const foreignResidentTypeOrder = [
 ];
 
 const ageGroupOrder = [
-  ...Array.from({ length: 20 }, (_, index) => `${index * 5}-${index * 5 + 4}세`),
+  ...Array.from({ length: 14 }, (_, index) => `${index * 5}-${index * 5 + 4}세`),
+  '70세 이상',
+  ...Array.from({ length: 6 }, (_, index) => `${70 + index * 5}-${74 + index * 5}세`),
   '100세 이상'
 ];
 

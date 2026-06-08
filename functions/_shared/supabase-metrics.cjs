@@ -83,12 +83,7 @@ function normalizeFiveYearAgeDistribution(ageDistribution = {}) {
       const start = Number(over[1]);
       if (start >= 100) addValue('100세 이상', value);
       else {
-        const buckets = [];
-        for (let bucketStart = start; bucketStart < 100; bucketStart += 5) {
-          buckets.push(`${bucketStart}-${bucketStart + 4}세`);
-        }
-        buckets.push('100세 이상');
-        buckets.forEach(bucket => addValue(bucket, value / buckets.length));
+        addValue(`${start}세 이상`, value);
       }
       return;
     }
