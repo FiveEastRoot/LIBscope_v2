@@ -601,11 +601,6 @@ function App() {
     </div>
   );
 
-  const sumComposition = (dataDict) => {
-    if (!dataDict) return 0;
-    return Object.values(dataDict).reduce((sum, value) => sum + Number(value || 0), 0);
-  };
-
   const getCultureCompositionOption = (cultureMetrics) => {
     if (!cultureMetrics) return {};
     const data = [
@@ -734,8 +729,6 @@ function App() {
   const socialSafetySections = buildSocialSafetySections(districtData?.socialIndicators);
   const activeSocialSafetySection = socialSafetySections.find(section => section.key === socialSafetyView) || socialSafetySections[0];
   const activeSocialSafetyItems = getTopCompositionItems(activeSocialSafetySection?.data);
-  const socialIndicators = districtData?.socialIndicators;
-  const registeredForeignerTotal = socialIndicators?.totalRegisteredForeigners || sumComposition(socialIndicators?.registeredForeignerNationalities || socialIndicators?.nationalityComposition);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -1145,30 +1138,6 @@ function App() {
                   <span className="text-[10px] text-slate-400 font-medium lg:text-right">
                     출처: {getSocialIndicatorSourceLabel(districtData.socialIndicators)}
                   </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                    <p className="text-[10px] font-bold text-slate-400">외국인 주민 총계</p>
-                    <p className="text-xl font-extrabold text-slate-800 mt-1">
-                      {formatCount(socialIndicators?.totalForeignResidents, '명')}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-2">외국인 주민 유형 구성의 총량 지표</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                    <p className="text-[10px] font-bold text-slate-400">등록외국인 총계</p>
-                    <p className="text-xl font-extrabold text-slate-800 mt-1">
-                      {formatCount(registeredForeignerTotal, '명')}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-2">국적 구성 원자료의 합계 또는 API 총계</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                    <p className="text-[10px] font-bold text-slate-400">국적 구성 항목</p>
-                    <p className="text-xl font-extrabold text-slate-800 mt-1">
-                      {formatCount(Object.keys(socialIndicators?.registeredForeignerNationalities || socialIndicators?.nationalityComposition || {}).length, '개')}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-2">등록외국인 국적 원자료 기준</p>
-                  </div>
                 </div>
 
                 <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
