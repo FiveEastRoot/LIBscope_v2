@@ -167,6 +167,17 @@ const cultureEnjoymentReference2024 = [
   {
     key: 'general',
     label: '일반 시민',
+    theme: {
+      active: 'bg-blue-600 border-blue-600 text-white',
+      inactive: 'bg-white/80 border-blue-100 text-blue-700 hover:bg-blue-50',
+      panel: 'bg-blue-50/70 border-blue-100',
+      text: 'text-blue-700',
+      subText: 'text-blue-900/70',
+      chip: 'text-blue-600 bg-white/70 border-blue-100',
+      barBg: 'bg-blue-100',
+      bar: 'bg-blue-500',
+      baseText: 'text-blue-500/80'
+    },
     denominator: '조사대상: 서울 거주 만 15세 이상 일반 시민, 표본 5,211명',
     items: [
       { label: '생활권에서 문화활동', value: 43.3, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '문화예술 관람/참여/교육 활동을 생활권에서 주로 함', display: 'bar' },
@@ -184,6 +195,17 @@ const cultureEnjoymentReference2024 = [
   {
     key: 'culture_interest',
     label: '문화 관심층',
+    theme: {
+      active: 'bg-emerald-600 border-emerald-600 text-white',
+      inactive: 'bg-white/80 border-emerald-100 text-emerald-700 hover:bg-emerald-50',
+      panel: 'bg-emerald-50/70 border-emerald-100',
+      text: 'text-emerald-700',
+      subText: 'text-emerald-900/70',
+      chip: 'text-emerald-600 bg-white/70 border-emerald-100',
+      barBg: 'bg-emerald-100',
+      bar: 'bg-emerald-500',
+      baseText: 'text-emerald-500/80'
+    },
     denominator: '조사대상: 서울 거주 문화 관심층, 표본 4,053명',
     items: [
       { label: '생활권 외 활동 탐색', value: 70.7, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '생활권 밖이어도 원하는 문화활동이 있는 곳을 찾아감', display: 'bar' },
@@ -202,6 +224,17 @@ const cultureEnjoymentReference2024 = [
   {
     key: 'disabled',
     label: '장애인',
+    theme: {
+      active: 'bg-rose-600 border-rose-600 text-white',
+      inactive: 'bg-white/80 border-rose-100 text-rose-700 hover:bg-rose-50',
+      panel: 'bg-rose-50/70 border-rose-100',
+      text: 'text-rose-700',
+      subText: 'text-rose-900/70',
+      chip: 'text-rose-600 bg-white/70 border-rose-100',
+      barBg: 'bg-rose-100',
+      bar: 'bg-rose-500',
+      baseText: 'text-rose-500/80'
+    },
     denominator: '조사대상: 서울 거주 장애인, 표본 755명',
     items: [
       { label: '오프라인 문화예술 연간 관람률', value: 35.5, unit: '%', base: '전체 장애인 응답자 n=755', note: '최근 1년간 오프라인 문화예술 활동 경험', display: 'bar' },
@@ -231,6 +264,17 @@ const ageGroupOrder = [
   ...Array.from({ length: 14 }, (_, index) => `${index * 5}-${index * 5 + 4}세`),
   '70세 이상'
 ];
+
+const getCultureReferenceHighlightClass = (item) => {
+  if (item.unit !== '%') return 'bg-white/80 border-current/10';
+  if (item.value < 10) {
+    return 'bg-gradient-to-br from-white via-white to-slate-100/90 border-current/30 shadow-inner';
+  }
+  if (item.value > 50) {
+    return 'bg-white/90 border-current/20 shadow-[0_0_24px_rgba(59,130,246,0.14)]';
+  }
+  return 'bg-white/80 border-current/10';
+};
 
 function PopulationModeToggle({ populationMode, onChange }) {
   return (
@@ -1150,16 +1194,16 @@ function App() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-4 lg:col-span-2">
+                <div className="grid grid-cols-1 gap-4">
+                  <div className={`border rounded-2xl p-4 ${activeCultureReference.theme.panel}`}>
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
                       <div>
-                        <h5 className="font-extrabold text-sm text-blue-700">서울시 문화향유 참고값</h5>
-                        <p className="text-xs text-blue-900/70 leading-relaxed mt-1">
+                        <h5 className={`font-extrabold text-sm ${activeCultureReference.theme.text}`}>서울시 문화향유 참고값</h5>
+                        <p className={`text-xs leading-relaxed mt-1 ${activeCultureReference.theme.subText}`}>
                           자치구별 직접 순위가 아니라, 집단별 문화향유 기준값을 LLM 인사이트 해석에 보조로 제공합니다.
                         </p>
                       </div>
-                      <span className="text-[10px] font-extrabold text-blue-600 bg-white/70 border border-blue-100 rounded-full px-3 py-1 shrink-0">
+                      <span className={`text-[10px] font-extrabold border rounded-full px-3 py-1 shrink-0 ${activeCultureReference.theme.chip}`}>
                         2024 서울시민 문화향유 실태조사
                       </span>
                     </div>
@@ -1172,9 +1216,7 @@ function App() {
                             type="button"
                             onClick={() => setCultureReferenceView(group.key)}
                             className={`min-w-32 rounded-xl border px-4 py-2 text-sm font-extrabold transition-colors ${
-                              isActive
-                                ? 'bg-blue-600 border-blue-600 text-white'
-                                : 'bg-white/80 border-blue-100 text-blue-700 hover:bg-blue-50'
+                              isActive ? group.theme.active : group.theme.inactive
                             }`}
                           >
                             {group.label}
@@ -1182,13 +1224,20 @@ function App() {
                         );
                       })}
                     </div>
-                    <p className="text-[10px] font-bold text-blue-700/80 mb-3">{activeCultureReference.denominator}</p>
+                    <p className={`text-[10px] font-bold mb-3 ${activeCultureReference.theme.text}`}>{activeCultureReference.denominator}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {activeCultureReference.items.map(item => (
-                        <div key={`${activeCultureReference.key}-${item.label}-${item.value}`} className="bg-white/80 border border-blue-100 rounded-xl p-3">
+                        <div
+                          key={`${activeCultureReference.key}-${item.label}-${item.value}`}
+                          className={`relative overflow-visible rounded-xl border p-3 text-current ${getCultureReferenceHighlightClass(item)}`}
+                        >
+                          {item.unit === '%' && item.value > 50 && (
+                            <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-current opacity-10 blur-lg" />
+                          )}
+                          <div className="relative">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className="text-[10px] font-extrabold text-blue-500">{activeCultureReference.label}</p>
+                              <p className={`text-[10px] font-extrabold ${activeCultureReference.theme.text}`}>{activeCultureReference.label}</p>
                               <p className="text-xs font-bold text-slate-700 mt-1">{item.label}</p>
                             </div>
                             <p className="text-lg font-extrabold text-slate-900 shrink-0">
@@ -1196,22 +1245,16 @@ function App() {
                             </p>
                           </div>
                           {item.unit === '%' && (
-                            <div className="h-2 bg-blue-100 rounded-full mt-3 overflow-hidden">
-                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(item.value, 100)}%` }} />
+                            <div className={`h-2 rounded-full mt-3 overflow-hidden ${activeCultureReference.theme.barBg}`}>
+                              <div className={`h-full rounded-full ${activeCultureReference.theme.bar}`} style={{ width: `${Math.min(item.value, 100)}%` }} />
                             </div>
                           )}
-                          <p className="text-[10px] text-blue-500/80 mt-2 leading-relaxed">분모: {item.base}</p>
+                          <p className={`text-[10px] mt-2 leading-relaxed ${activeCultureReference.theme.baseText}`}>분모: {item.base}</p>
                           <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">{item.note}</p>
+                          </div>
                         </div>
                       ))}
                     </div>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                    <h5 className="font-extrabold text-sm text-slate-800 mb-2">LLM 인사이트 연결 방식</h5>
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      이 섹션은 지표와 해석 방향만 제공합니다. 최종 인사이트는 인구, 고령화, 외국인 주민, 장애인, 수급자,
-                      도서관 반경 정보와 함께 LLM 서비스에서 종합 생성하는 구조로 분리합니다.
-                    </p>
                   </div>
                 </div>
               </div>
