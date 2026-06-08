@@ -163,6 +163,43 @@ const cultureColorClasses = {
   slate: 'bg-slate-100 text-slate-700 border-slate-200'
 };
 
+const cultureEnjoymentReference2024 = [
+  {
+    key: 'general',
+    label: '일반 시민',
+    denominator: '분모: 2024 서울시민 문화향유 실태조사 일반 시민 응답자',
+    items: [
+      { label: '축제·행사 참여', value: 31.4, unit: '%', note: '지역 축제·문화행사 참여 경험', display: 'bar' },
+      { label: '문화예술교육 참여', value: 13.9, unit: '%', note: '문화예술 교육 프로그램 참여', display: 'bar' },
+      { label: '동호회 참여', value: 10.9, unit: '%', note: '지역 기반 문화·예술 동호회 참여', display: 'bar' },
+      { label: '소규모 지역행사 참여', value: 18.1, unit: '%', note: '작은 지역문화 행사 참여 경험', display: 'bar' },
+      { label: '소규모 지역행사 참여 의향', value: 49.9, unit: '%', note: '향후 작은 지역문화 행사 참여 의향', display: 'bar' }
+    ]
+  },
+  {
+    key: 'culture_interest',
+    label: '문화 관심층',
+    denominator: '분모: 2024 서울시민 문화향유 실태조사 문화 관심층 응답자',
+    items: [
+      { label: '축제·행사 참여', value: 36.6, unit: '%', note: '문화 관심층의 지역 축제·문화행사 참여 경험', display: 'bar' },
+      { label: '문화예술 프로그램 관람', value: 30.8, unit: '%', note: '문화 관심층의 문화예술 프로그램 관람 경험', display: 'bar' },
+      { label: '문화예술교육 참여', value: 21.1, unit: '%', note: '문화 관심층의 문화예술 교육 프로그램 참여', display: 'bar' },
+      { label: '동호회 참여', value: 8.4, unit: '%', note: '문화 관심층의 문화·예술 동호회 참여', display: 'bar' },
+      { label: '소규모 지역행사 참여', value: 30.0, unit: '%', note: '작은 지역문화 행사 참여 경험', display: 'bar' },
+      { label: '소규모 지역행사 참여 의향', value: 76.0, unit: '%', note: '향후 작은 지역문화 행사 참여 의향', display: 'bar' }
+    ]
+  },
+  {
+    key: 'disabled',
+    label: '장애인',
+    denominator: '분모: 2024 서울시민 문화향유 실태조사 장애인 응답자',
+    items: [
+      { label: '소규모 지역행사 참여', value: 2.4, unit: '%', note: '장애인 응답자의 작은 지역문화 행사 참여 경험', display: 'bar' },
+      { label: '소규모 지역행사 참여 의향', value: 35.2, unit: '%', note: '장애인 응답자의 향후 지역행사 참여 의향', display: 'bar' }
+    ]
+  }
+];
+
 const foreignResidentTypeOrder = [
   '외국국적동포',
   '기타외국인',
@@ -209,6 +246,7 @@ function App() {
   const [librariesInGu, setLibrariesInGu] = useState([]);
   const [isInsightExpanded, setIsInsightExpanded] = useState(false);
   const [socialSafetyView, setSocialSafetyView] = useState('household');
+  const [cultureReferenceView, setCultureReferenceView] = useState('general');
   
   // API 로딩 및 데이터 상태
   const [loading, setLoading] = useState(false);
@@ -759,6 +797,7 @@ function App() {
   const socialSafetySections = buildSocialSafetySections(districtData?.socialIndicators);
   const activeSocialSafetySection = socialSafetySections.find(section => section.key === socialSafetyView) || socialSafetySections[0];
   const activeSocialSafetyItems = getTopCompositionItems(activeSocialSafetySection?.data);
+  const activeCultureReference = cultureEnjoymentReference2024.find(group => group.key === cultureReferenceView) || cultureEnjoymentReference2024[0];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -1094,13 +1133,60 @@ function App() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-4">
-                    <h5 className="font-extrabold text-sm text-blue-700 mb-2">서울시 문화향유 참고값</h5>
-                    <p className="text-xs text-blue-900/70 leading-relaxed">
-                      2024 서울시민 문화향유 실태조사의 축제·행사, 문화예술교육, 동호회, 소규모 지역행사 참여 의향 항목은
-                      자치구별 직접 순위가 아니라 지표 해석을 보조하는 서울시 기준값으로 분리해 표시합니다.
-                    </p>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-4 lg:col-span-2">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
+                      <div>
+                        <h5 className="font-extrabold text-sm text-blue-700">서울시 문화향유 참고값</h5>
+                        <p className="text-xs text-blue-900/70 leading-relaxed mt-1">
+                          자치구별 직접 순위가 아니라, 집단별 문화향유 기준값을 LLM 인사이트 해석에 보조로 제공합니다.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-blue-600 bg-white/70 border border-blue-100 rounded-full px-3 py-1 shrink-0">
+                        2024 서울시민 문화향유 실태조사
+                      </span>
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
+                      {cultureEnjoymentReference2024.map(group => {
+                        const isActive = activeCultureReference.key === group.key;
+                        return (
+                          <button
+                            key={group.key}
+                            type="button"
+                            onClick={() => setCultureReferenceView(group.key)}
+                            className={`min-w-32 rounded-xl border px-4 py-2 text-sm font-extrabold transition-colors ${
+                              isActive
+                                ? 'bg-blue-600 border-blue-600 text-white'
+                                : 'bg-white/80 border-blue-100 text-blue-700 hover:bg-blue-50'
+                            }`}
+                          >
+                            {group.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] font-bold text-blue-700/80 mb-3">{activeCultureReference.denominator}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {activeCultureReference.items.map(item => (
+                        <div key={`${activeCultureReference.key}-${item.label}-${item.value}`} className="bg-white/80 border border-blue-100 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[10px] font-extrabold text-blue-500">{activeCultureReference.label}</p>
+                              <p className="text-xs font-bold text-slate-700 mt-1">{item.label}</p>
+                            </div>
+                            <p className="text-lg font-extrabold text-slate-900 shrink-0">
+                              {item.value.toFixed(1)}{item.unit}
+                            </p>
+                          </div>
+                          {item.unit === '%' && (
+                            <div className="h-2 bg-blue-100 rounded-full mt-3 overflow-hidden">
+                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(item.value, 100)}%` }} />
+                            </div>
+                          )}
+                          <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">{item.note}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
                     <h5 className="font-extrabold text-sm text-slate-800 mb-2">LLM 인사이트 연결 방식</h5>
