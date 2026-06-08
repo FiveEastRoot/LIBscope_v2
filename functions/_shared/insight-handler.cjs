@@ -468,6 +468,10 @@ function normalizeFiveYearAgeDistribution(ageDistribution = {}) {
     if (range) {
       const start = Number(range[1]);
       const end = Number(range[2]);
+      if (start >= 70) {
+        addValue('70세 이상', value);
+        return;
+      }
       if (start >= 100) {
         addValue('100세 이상', value);
         return;
@@ -494,7 +498,8 @@ function normalizeFiveYearAgeDistribution(ageDistribution = {}) {
     const over = String(label).match(/^(\d{1,3})세 이상$/);
     if (over) {
       const start = Number(over[1]);
-      if (start >= 100) addValue('100세 이상', value);
+      if (start >= 70) addValue('70세 이상', value);
+      else if (start >= 100) addValue('100세 이상', value);
       else {
         addValue(`${start}세 이상`, value);
       }
