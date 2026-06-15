@@ -164,6 +164,26 @@ function getSocialSignals(districtData = {}) {
   };
 }
 
+function normalizeSnapshotValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeSnapshotValue);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, item]) => [key, normalizeSnapshotValue(item)])
+    );
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return '';
+    const numeric = Number(trimmed);
+    return Number.isFinite(numeric) ? numeric : trimmed;
+  }
+  return value;
+}
+
 function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
   const population = districtData.population || {};
   const resident = getPopulationMode(population, 'resident') || population;
@@ -213,8 +233,8 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
       totalForeignResidents: social.totalForeignResidents,
       totalRegisteredForeigners: social.totalRegisteredForeigners
     },
-    cultureYear: cultureMetrics.year,
-    cultureMetrics,
+    cultureYear: normalizeSnapshotValue(cultureMetrics.year),
+    cultureMetrics: normalizeSnapshotValue(cultureMetrics),
     cultureAndEducation: {
       schools,
       schoolDetailNames,
