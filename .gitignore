@@ -26,6 +26,9 @@ dist-ssr
 # Local Netlify folder
 .netlify
 
+# Local script previews
+.tmp
+
 # Local environment variables
 .env
 

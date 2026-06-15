@@ -1,0 +1,47 @@
+name: Refresh LLM Insight Cache Weekly
+
+on:
+  schedule:
+    # 매주 일요일 04:00 (KST) = 매주 토요일 19:00 (UTC)
+    - cron: '0 19 * * 6'
+  workflow_dispatch:
+
+jobs:
+  refresh-llm-cache:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      INSIGHT_API_BASE_URL: ${{ secrets.INSIGHT_API_BASE_URL || 'https://libscope2.netlify.app/api/insight-api' }}
+      LLM_HARNESS_BASE_URL: ${{ secrets.LLM_HARNESS_BASE_URL || 'https://libscope2.netlify.app/api/llm-harness' }}
+      LLM_REFRESH_PROVIDER: ${{ secrets.LLM_REFRESH_PROVIDER || 'direct-openai' }}
+      LLM_REFRESH_CONCURRENCY: 2
+      LLM_REFRESH_SLEEP_MS: 750
+      LLM_SOURCE_FORCE_REFRESH: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required configuration
+        run: |
+          if [ -z "$INSIGHT_API_BASE_URL" ]; then
+            echo "::error::INSIGHT_API_BASE_URL is required. Set it in repository secrets."
+            exit 1
+          fi
+          if [ -z "$LLM_HARNESS_BASE_URL" ]; then
+            echo "::error::LLM_HARNESS_BASE_URL is required. Set it in repository secrets."
+            exit 1
+          fi
+          echo "Using insight API base URL: $INSIGHT_API_BASE_URL"
+          echo "Using LLM harness base URL: $LLM_HARNESS_BASE_URL"
+
+      - name: Refresh LLM cache
+        run: npm run refresh:llm-cache

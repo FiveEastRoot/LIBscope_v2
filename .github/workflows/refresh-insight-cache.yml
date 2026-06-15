@@ -10,7 +10,8 @@ jobs:
   refresh-insight-cache:
     runs-on: ubuntu-latest
     env:
-      INSIGHT_API_BASE_URL: ${{ secrets.INSIGHT_API_BASE_URL }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      INSIGHT_API_BASE_URL: ${{ secrets.INSIGHT_API_BASE_URL || 'https://libscope2.netlify.app/api/insight-api' }}
       INSIGHT_REFRESH_SCOPE: all
       INSIGHT_REFRESH_CONCURRENCY: 6
       INSIGHT_REFRESH_SLEEP_MS: 250
@@ -22,7 +23,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
@@ -34,6 +35,7 @@ jobs:
             echo "::error::INSIGHT_API_BASE_URL is required. Set it in repository secrets (예: https://your-site.netlify.app/api/insight-api)"
             exit 1
           fi
+          echo "Using insight API base URL: $INSIGHT_API_BASE_URL"
 
       - name: Refresh insight cache
         run: npm run refresh:insight-cache

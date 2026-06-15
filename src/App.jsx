@@ -1,7 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
-import ReactECharts from 'echarts-for-react';
 import { 
   Building, 
   MapPin, 
@@ -12,323 +11,114 @@ import {
   Award,
   ChevronRight,
   Home,
-  Lightbulb,
-  ChevronDown,
-  BarChart3
+  BarChart3,
+  Bot,
+  Shield,
+  Theater,
+  School,
+  MapPinned,
+  Sparkles,
+  FileText,
+  Download
 } from 'lucide-react';
 import libraryData from '../library_dong_mapping.json';
-import cultureMetricsCsv from '../district_culture_enjoyment_metrics.csv?raw';
+import MetricInterpretationPanel from './components/MetricInterpretationPanel';
+import PopulationModeToggle from './components/PopulationModeToggle';
+import ResponsiveEChart from './components/ResponsiveEChart';
+import {
+  cultureColorClasses,
+  cultureEnjoymentReference2024,
+  cultureMetricGroups,
+  cultureMetricsRows,
+  getCultureReferenceHighlightClass
+} from './data/cultureMetrics';
+import {
+  aggregateNationalityComposition,
+  buildSocialSafetySections,
+  getAgeChartOption,
+  getCultureAccessBarOption,
+  getCultureCompositionOption,
+  getGenderChartOption,
+  getPopulationSourceLabel,
+  getSocialIndicatorSourceLabel,
+  getStackedBarOption,
+  getTopCompositionItems
+} from './utils/dashboardMetrics';
+import { formatCount, formatMetric } from './utils/formatters';
+import { getModelRecommendationBadges } from './utils/modelBadges';
 
 // 서울시 25개 자치구 목록 정렬
 const guList = [...new Set(libraryData.libraries.map(lib => lib.gu))].sort();
 
 const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY || '05b872ee85af3352573dc4c52b709ddd';
+const KAKAO_SDK_SCRIPT_ID = 'kakao-map-sdk';
+let kakaoMapSdkPromise = null;
 
-const parseCsvLine = (line) => {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
+const loadKakaoMapSdk = () => {
+  if (window.kakao?.maps) {
+    return Promise.resolve(window.kakao);
+  }
 
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    const next = line[i + 1];
-    if (char === '"' && next === '"') {
-      current += '"';
-      i += 1;
-    } else if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += char;
+  if (kakaoMapSdkPromise) {
+    return kakaoMapSdkPromise;
+  }
+
+  kakaoMapSdkPromise = new Promise((resolve, reject) => {
+    const existingScript = document.getElementById(KAKAO_SDK_SCRIPT_ID);
+    const finishLoad = () => {
+      if (!window.kakao?.maps?.load) {
+        reject(new Error('카카오 지도 SDK 객체가 준비되지 않았습니다.'));
+        return;
+      }
+      window.kakao.maps.load(() => resolve(window.kakao));
+    };
+
+    if (existingScript) {
+      existingScript.addEventListener('load', finishLoad, { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('카카오 지도 SDK 로드에 실패했습니다.')), { once: true });
+      return;
     }
-  }
-  result.push(current);
-  return result;
-};
 
-const parseCultureMetrics = (csvText) => {
-  const lines = csvText.trim().split(/\r?\n/);
-  const headers = parseCsvLine(lines[0]).map(header => header.replace(/^\uFEFF/, ''));
-  return lines.slice(1).map(line => {
-    const values = parseCsvLine(line);
-    return headers.reduce((row, header, index) => {
-      row[header] = values[index] ?? '';
-      return row;
-    }, {});
+    const script = document.createElement('script');
+    script.id = KAKAO_SDK_SCRIPT_ID;
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
+    script.async = true;
+    script.onload = finishLoad;
+    script.onerror = () => {
+      kakaoMapSdkPromise = null;
+      reject(new Error('카카오 지도 SDK 로드에 실패했습니다.'));
+    };
+
+    document.head.appendChild(script);
   });
+
+  return kakaoMapSdkPromise;
 };
 
-const cultureMetricsRows = parseCultureMetrics(cultureMetricsCsv);
-
-const toNumber = (value) => {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(String(value).replace(/,/g, ''));
-  return Number.isFinite(parsed) ? parsed : null;
+const formatInsightGeneratedAt = (value) => {
+  if (!value) return '생성일 확인 대기';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '생성일 확인 대기';
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
 };
-
-const formatMetric = (value, unit = '개') => {
-  const numericValue = toNumber(value);
-  if (numericValue === null) return '-';
-  return `${numericValue.toLocaleString()}${unit}`;
-};
-
-const formatCount = (value, unit = '') => {
-  const numericValue = toNumber(value);
-  if (numericValue === null) return '-';
-  return `${numericValue.toLocaleString()}${unit}`;
-};
-
-const cultureMetricGroups = [
-  {
-    key: 'infrastructure',
-    title: '문화시설 공급 기반',
-    description: '자치구 내 공공 문화시설의 기본 공급 규모와 인구 대비 접근성을 함께 보는 지표입니다.',
-    metrics: [
-      { label: '공공문화시설', field: 'public_culture_facilities', unit: '개' },
-      { label: '인구 10만 명당', field: 'public_culture_facilities_per100k', unit: '개' }
-    ],
-    color: 'blue'
-  },
-  {
-    key: 'library',
-    title: '도서관 문화 접근성',
-    description: '도서관 기반 문화 접근성과 생활권 문화 프로그램 거점 가능성을 참고하는 지표입니다.',
-    metrics: [
-      { label: '전체 도서관', field: 'libraries_total', unit: '개' },
-      { label: '인구 10만 명당', field: 'libraries_per100k', unit: '개' }
-    ],
-    color: 'indigo'
-  },
-  {
-    key: 'performance',
-    title: '공연·발표 공간 접근성',
-    description: '공연 관람, 지역 예술활동, 발표회 운영과 관련된 공간 기반을 보여줍니다.',
-    metrics: [
-      { label: '공공공연장', field: 'public_performance_halls', unit: '개' },
-      { label: '공연시설', field: 'public_performance_spaces', unit: '개' }
-    ],
-    color: 'emerald'
-  },
-  {
-    key: 'exhibition',
-    title: '전시·관람 자원',
-    description: '박물관과 미술관 등 전시·관람형 문화자원의 분포를 확인하는 지표입니다.',
-    metrics: [
-      { label: '박물관·미술관', field: 'public_museums_galleries', unit: '개' },
-      { label: '인구 10만 명당', field: 'public_museums_galleries_per100k', unit: '개' }
-    ],
-    color: 'rose'
-  },
-  {
-    key: 'local',
-    title: '생활문화 기반',
-    description: '주민 참여형 문화활동, 교육, 동아리, 커뮤니티 운영 기반을 살펴보는 지표입니다.',
-    metrics: [
-      { label: '문화복지시설', field: 'local_culture_welfare_facilities', unit: '개' },
-      { label: '생활문화센터', field: 'life_culture_centers', unit: '개' }
-    ],
-    color: 'amber'
-  },
-  {
-    key: 'inclusive',
-    title: '포용적 문화 접근성',
-    description: '이동약자와 장애인의 문화시설 이용 여건을 참고하기 위한 보조 지표입니다.',
-    metrics: [
-      { label: '무장애 인증시설', field: 'barrier_free_indoor_culture_spaces', unit: '개' },
-      { label: '인구 10만 명당', field: 'barrier_free_indoor_culture_spaces_per100k', unit: '개' }
-    ],
-    color: 'cyan'
-  },
-  {
-    key: 'policy',
-    title: '문화정책 기반',
-    description: '자치구 문화정책의 제도화 수준과 최근 조례 갱신 활동을 참고하는 지표입니다.',
-    metrics: [
-      { label: '문화정책 조례', field: 'culture_policy_ordinance_count', unit: '건' },
-      { label: '제·개정 건수', field: 'culture_policy_revision_count', unit: '건' }
-    ],
-    color: 'slate'
-  }
-];
-
-const cultureColorClasses = {
-  blue: 'bg-blue-50 text-blue-600 border-blue-100',
-  indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-  emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-  rose: 'bg-rose-50 text-rose-600 border-rose-100',
-  amber: 'bg-amber-50 text-amber-600 border-amber-100',
-  cyan: 'bg-cyan-50 text-cyan-600 border-cyan-100',
-  slate: 'bg-slate-100 text-slate-700 border-slate-200'
-};
-
-const cultureEnjoymentReference2024 = [
-  {
-    key: 'general',
-    label: '일반 시민',
-    theme: {
-      active: 'bg-blue-600 border-blue-600 text-white',
-      inactive: 'bg-white/80 border-blue-100 text-blue-700 hover:bg-blue-50',
-      panel: 'bg-blue-50/70 border-blue-100',
-      text: 'text-blue-700',
-      subText: 'text-blue-900/70',
-      chip: 'text-blue-600 bg-white/70 border-blue-100',
-      barBg: 'bg-blue-100',
-      bar: 'bg-blue-500',
-      baseText: 'text-blue-500/80',
-      lowHighlight: 'bg-white/75 border-dashed border-blue-300/80',
-      lowMarker: 'bg-blue-200',
-      lowValue: 'bg-white/80 text-blue-500 border-dashed border-blue-200',
-      highHighlight: 'bg-white/95 border-blue-200/80',
-      highRail: 'bg-blue-500',
-      highTopLine: 'bg-blue-200',
-      highValue: 'bg-blue-50 text-blue-700 border-blue-100'
-    },
-    denominator: '조사대상: 서울 거주 만 15세 이상 일반 시민, 표본 5,211명',
-    items: [
-      { label: '생활권에서 문화활동', value: 43.3, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '문화예술 관람/참여/교육 활동을 생활권에서 주로 함', display: 'bar' },
-      { label: '도서관 문화정보 경험', value: 52.8, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '도서관 이용을 통해 지역사회 문화예술 정보를 접한 경험', display: 'bar' },
-      { label: '정보 기반 실제 참여', value: 61.4, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관에서 접한 정보를 통해 실제 문화예술 활동에 참여한 경험', display: 'bar' },
-      { label: '축제·행사 참여', value: 31.4, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 활동 중 지역 축제 및 행사', display: 'bar' },
-      { label: '문화예술 관람 프로그램 참여', value: 19.6, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술 관람 프로그램', display: 'bar' },
-      { label: '문화예술교육 참여', value: 13.9, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술교육', display: 'bar' },
-      { label: '동호회 참여', value: 10.9, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 지역 모임/동아리 활동', display: 'bar' },
-      { label: '지역사회 관심도 증가', value: 69.1, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관 정보로 지역사회 관심이 커졌다는 응답', display: 'bar' },
-      { label: '소규모 지역행사 참여', value: 18.1, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '거주지 주변 소규모 문화행사 참여 경험', display: 'bar' },
-      { label: '소규모 지역행사 참여 의향', value: 49.9, unit: '%', base: '전체 일반 시민 응답자 n=5,211', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' }
-    ]
-  },
-  {
-    key: 'culture_interest',
-    label: '문화 관심층',
-    theme: {
-      active: 'bg-emerald-600 border-emerald-600 text-white',
-      inactive: 'bg-white/80 border-emerald-100 text-emerald-700 hover:bg-emerald-50',
-      panel: 'bg-emerald-50/70 border-emerald-100',
-      text: 'text-emerald-700',
-      subText: 'text-emerald-900/70',
-      chip: 'text-emerald-600 bg-white/70 border-emerald-100',
-      barBg: 'bg-emerald-100',
-      bar: 'bg-emerald-500',
-      baseText: 'text-emerald-500/80',
-      lowHighlight: 'bg-white/75 border-dashed border-emerald-300/80',
-      lowMarker: 'bg-emerald-200',
-      lowValue: 'bg-white/80 text-emerald-500 border-dashed border-emerald-200',
-      highHighlight: 'bg-white/95 border-emerald-200/80',
-      highRail: 'bg-emerald-500',
-      highTopLine: 'bg-emerald-200',
-      highValue: 'bg-emerald-50 text-emerald-700 border-emerald-100'
-    },
-    denominator: '조사대상: 서울 거주 문화 관심층, 표본 4,053명',
-    items: [
-      { label: '생활권 외 활동 탐색', value: 70.7, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '생활권 밖이어도 원하는 문화활동이 있는 곳을 찾아감', display: 'bar' },
-      { label: '생활권에서 문화활동', value: 26.3, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '문화예술 관람/참여/교육 활동을 생활권에서 주로 함', display: 'bar' },
-      { label: '도서관 문화정보 경험', value: 68.9, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '도서관 이용을 통해 지역사회 문화예술 정보를 접한 경험', display: 'bar' },
-      { label: '정보 기반 실제 참여', value: 68.8, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관에서 접한 정보를 통해 실제 문화예술 활동에 참여한 경험', display: 'bar' },
-      { label: '축제·행사 참여', value: 36.6, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 지역 축제 및 행사', display: 'bar' },
-      { label: '문화예술 관람 프로그램 참여', value: 30.8, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술 관람 프로그램', display: 'bar' },
-      { label: '문화예술교육 참여', value: 21.1, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 문화예술교육', display: 'bar' },
-      { label: '동호회 참여', value: 8.4, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '정보를 통해 실제 참여한 지역 모임/동아리 활동', display: 'bar' },
-      { label: '지역사회 관심도 증가', value: 78.6, unit: '%', base: '도서관 이용을 통한 지역문화예술 정보 경험자', note: '도서관 정보로 지역사회 관심이 커졌다는 응답', display: 'bar' },
-      { label: '소규모 지역행사 참여', value: 30.0, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '거주지 주변 소규모 문화행사 참여 경험', display: 'bar' },
-      { label: '소규모 지역행사 참여 의향', value: 76.0, unit: '%', base: '전체 문화 관심층 응답자 n=4,053', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' }
-    ]
-  },
-  {
-    key: 'disabled',
-    label: '장애인',
-    theme: {
-      active: 'bg-rose-600 border-rose-600 text-white',
-      inactive: 'bg-white/80 border-rose-100 text-rose-700 hover:bg-rose-50',
-      panel: 'bg-rose-50/70 border-rose-100',
-      text: 'text-rose-700',
-      subText: 'text-rose-900/70',
-      chip: 'text-rose-600 bg-white/70 border-rose-100',
-      barBg: 'bg-rose-100',
-      bar: 'bg-rose-500',
-      baseText: 'text-rose-500/80',
-      lowHighlight: 'bg-white/75 border-dashed border-rose-300/80',
-      lowMarker: 'bg-rose-200',
-      lowValue: 'bg-white/80 text-rose-500 border-dashed border-rose-200',
-      highHighlight: 'bg-white/95 border-rose-200/80',
-      highRail: 'bg-rose-500',
-      highTopLine: 'bg-rose-200',
-      highValue: 'bg-rose-50 text-rose-700 border-rose-100'
-    },
-    denominator: '조사대상: 서울 거주 장애인, 표본 755명',
-    items: [
-      { label: '오프라인 문화예술 연간 관람률', value: 35.5, unit: '%', base: '전체 장애인 응답자 n=755', note: '최근 1년간 오프라인 문화예술 활동 경험', display: 'bar' },
-      { label: '연간 오프라인 활동 횟수', value: 3.7, unit: '회', base: '오프라인 문화예술 활동 경험자', note: '최근 1년간 오프라인 활동 총 횟수', display: 'number' },
-      { label: '연간 관람 비용', value: 6.8, unit: '만원', base: '오프라인 문화예술 활동 지불 경험자', note: '최근 1년간 본인 지불 관람 총 비용', display: 'number' },
-      { label: '도서관 문화정보 경험 - 지체장애', value: 30.8, unit: '%', base: '지체장애 응답자', note: '도서관 이용을 통해 지역사회 문화예술 정보를 접한 경험', display: 'bar' },
-      { label: '정보 기반 실제 참여 - 청각장애', value: 52.8, unit: '%', base: '청각장애 중 도서관 지역문화예술 정보 경험자', note: '도서관 정보를 통해 실제 문화예술 활동에 참여한 경험', display: 'bar' },
-      { label: '지역사회 관심도 증가 - 지체장애', value: 75.9, unit: '%', base: '지체장애 중 도서관 지역문화예술 정보 경험자', note: '도서관 정보로 지역사회 관심이 커졌다는 응답', display: 'bar' },
-      { label: '소규모 지역행사 참여 - 시각장애', value: 2.6, unit: '%', base: '시각장애 응답자', note: '거주지 주변 소규모 문화행사 참여 경험', display: 'bar' },
-      { label: '소규모 지역행사 참여 의향 - 청각장애', value: 38.9, unit: '%', base: '청각장애 응답자', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' },
-      { label: '소규모 지역행사 참여 의향 - 지체장애', value: 36.5, unit: '%', base: '지체장애 응답자', note: '향후 거주지 주변 소규모 문화행사 참여 의향 있음', display: 'bar' }
-    ]
-  }
-];
-
-const foreignResidentTypeOrder = [
-  '외국국적동포',
-  '기타외국인',
-  '외국인주민자녀(출생)',
-  '외국인근로자',
-  '결혼이민자',
-  '한국국적취득자',
-  '유학생'
-];
-
-const ageGroupOrder = [
-  ...Array.from({ length: 14 }, (_, index) => `${index * 5}-${index * 5 + 4}세`),
-  '70세 이상'
-];
-
-const getCultureReferenceHighlightClass = (item, theme) => {
-  if (item.unit !== '%') return 'bg-white/80 border-current/10';
-  if (item.value < 10) {
-    return theme.lowHighlight;
-  }
-  if (item.value > 50) {
-    return theme.highHighlight;
-  }
-  return 'bg-white/80 border-current/10';
-};
-
-function PopulationModeToggle({ populationMode, onChange }) {
-  return (
-    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1">
-      {[
-        { key: 'resident', label: '주민등록' },
-        { key: 'living', label: '생활인구' }
-      ].map(option => (
-        <button
-          key={option.key}
-          type="button"
-          onClick={() => onChange(option.key)}
-          className={`px-3 py-1.5 text-xs font-extrabold rounded-md transition-colors ${
-            populationMode === option.key
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function App() {
   const [activeTab, setActiveTab] = useState('district'); // 'district' | 'library'
   const [selectedGu, setSelectedGu] = useState('강남구');
   const [selectedLibrary, setSelectedLibrary] = useState('');
   const [librariesInGu, setLibrariesInGu] = useState([]);
-  const [isInsightExpanded, setIsInsightExpanded] = useState(false);
   const [socialSafetyView, setSocialSafetyView] = useState('household');
   const [cultureReferenceView, setCultureReferenceView] = useState('general');
+  const [educationCategory, setEducationCategory] = useState('elementary');
+  const [educationPage, setEducationPage] = useState(0);
+  const [publicPlaceCategory, setPublicPlaceCategory] = useState('all');
+  const [publicPlacePage, setPublicPlacePage] = useState(0);
   
   // API 로딩 및 데이터 상태
   const [loading, setLoading] = useState(false);
@@ -336,6 +126,12 @@ function App() {
   const [districtData, setDistrictData] = useState(null);
   const [libraryDataDetail, setLibraryDataDetail] = useState(null);
   const [populationMode, setPopulationMode] = useState('resident');
+  const [llmHarness, setLlmHarness] = useState(null);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmError, setLlmError] = useState(null);
+  const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
+  const [llmProviderMode, setLlmProviderMode] = useState('cache');
+  const [llmRefreshNonce, setLlmRefreshNonce] = useState(0);
 
   // 지도 인스턴스 참조
   const mapContainerRef = useRef(null);
@@ -400,32 +196,41 @@ function App() {
     }
   }, [activeTab, selectedGu, selectedLibrary]);
 
+  useEffect(() => {
+    setPublicPlaceCategory('all');
+    setPublicPlacePage(0);
+  }, [selectedLibrary]);
+
+  useEffect(() => {
+    setPublicPlacePage(0);
+  }, [publicPlaceCategory]);
+
+  useEffect(() => {
+    setEducationPage(0);
+  }, [educationCategory, selectedGu]);
+
+  useEffect(() => {
+    setReportPreviewOpen(false);
+    setLlmProviderMode('cache');
+  }, [selectedGu]);
+
   // 카카오 맵 SDK 동적 로딩
   useEffect(() => {
-    if (window.kakao && window.kakao.maps) {
-      setMapLoaded(true);
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
-    script.async = true;
-    
-    script.onload = () => {
-      window.kakao.maps.load(() => {
+    let cancelled = false;
+    loadKakaoMapSdk()
+      .then(() => {
+        if (cancelled) return;
         setMapLoaded(true);
         setMapError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('카카오 지도 SDK 로딩 에러:', err);
+        setMapError('카카오 지도 SDK 로드에 실패했습니다. 키 유효성 및 도메인 설정을 확인하세요.');
       });
-    };
-    
-    script.onerror = (err) => {
-      console.error('카카오 지도 SDK 로딩 에러:', err);
-      setMapError('카카오 지도 SDK 로드에 실패했습니다. 키 유효성 및 도메인 설정을 확인하세요.');
-    };
 
-    document.head.appendChild(script);
     return () => {
-      document.head.removeChild(script);
+      cancelled = true;
     };
   }, []);
 
@@ -551,194 +356,15 @@ function App() {
     }
   }, [activeTab, mapLoaded, libraryDataDetail]);
 
-  // ECharts 옵션 제너레이터 - 연령대별 인구 분포
-  const getAgeChartOption = (ageDistribution) => {
-    if (!ageDistribution) return {};
-    const categories = ageGroupOrder.filter(label => ageDistribution[label] !== undefined);
-    const data = categories.map(label => ageDistribution[label]);
-    
-    // 0-9세는 하늘색, 10-64세는 노랑, 65세 이상은 붉은색으로 구분
-    const colors = categories.map(cat => {
-      const ageNum = Number(cat.match(/^\d+/)?.[0] || 0);
-      if (ageNum <= 9) return '#54a0ff';
-      if (ageNum <= 64) return '#facc15';
-      return '#ef4444';
-    });
-
-    return {
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'category', data: categories, axisLabel: { interval: 0, rotate: 30 } },
-      yAxis: { type: 'value' },
-      series: [
-        {
-          name: '인구수',
-          type: 'bar',
-          data: data.map((val, idx) => ({
-            value: val,
-            itemStyle: { color: colors[idx] }
-          }))
-        }
-      ]
-    };
-  };
-
-  // ECharts 옵션 제너레이터 - 성별 비율 도넛 차트
-  const getGenderChartOption = (genderRatio) => {
-    if (!genderRatio) return {};
-    return {
-      tooltip: { trigger: 'item', confine: true },
-      legend: {
-        bottom: 0,
-        left: 'center',
-        itemWidth: 18,
-        itemHeight: 10,
-        textStyle: { color: '#64748b', fontSize: 11, fontWeight: 700 }
-      },
-      series: [
-        {
-          name: '성별 인구',
-          type: 'pie',
-          radius: ['42%', '68%'],
-          center: ['50%', '46%'],
-          avoidLabelOverlap: true,
-          itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
-          label: { show: false },
-          labelLine: { show: false },
-          data: [
-            { value: genderRatio.male, name: '남성', itemStyle: { color: '#8ed6fb' } },
-            { value: genderRatio.female, name: '여성', itemStyle: { color: '#fac4d5' } }
-          ]
-        }
-      ]
-    };
-  };
-
-  // ECharts 옵션 제너레이터 - 100% 누적 바 차트 (다문화, 장애인, 가구 유형 비율용)
-  const getStackedBarOption = (title, dataDict) => {
-    if (!dataDict || Object.keys(dataDict).length === 0) return {};
-    const keys = Object.keys(dataDict).sort((a, b) => Number(dataDict[b] || 0) - Number(dataDict[a] || 0));
-    const total = Object.values(dataDict).reduce((a, b) => a + b, 0);
-
-    const seriesData = keys.map(key => ({
-      name: key,
-      type: 'bar',
-      stack: 'total',
-      label: {
-        show: true,
-        formatter: (params) => {
-          const pct = (params.value / total) * 100;
-          return pct > 5 ? `${pct.toFixed(1)}%` : '';
-        }
-      },
-      emphasis: { focus: 'series' },
-      data: [dataDict[key]]
-    }));
-
-    return {
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      legend: { bottom: '0%', left: 'center' },
-      grid: { left: '3%', right: '3%', top: '10%', bottom: '20%', containLabel: true },
-      xAxis: { type: 'value', max: total, show: false },
-      yAxis: { type: 'category', data: [title], show: false },
-      series: seriesData
-    };
-  };
-
-  const getOrderedComposition = (dataDict, order) => {
-    if (!dataDict) return {};
-    return order.reduce((result, key) => {
-      const value = Number(dataDict[key] || 0);
-      if (value > 0) result[key] = value;
-      return result;
-    }, {});
-  };
-
-  const getForeignDataBundle = (socialIndicators) => {
-    const legacyMulticultural = socialIndicators?.multicultural || {};
-    const residentSource = socialIndicators?.foreignResidents || legacyMulticultural;
-    const residentData = getOrderedComposition(residentSource, foreignResidentTypeOrder);
-    const multiculturalLooksLikeResidentTypes = Object.keys(residentData).length > 0;
-    const nationalityData = socialIndicators?.registeredForeignerNationalities
-      || socialIndicators?.nationalityComposition
-      || (multiculturalLooksLikeResidentTypes ? {} : legacyMulticultural);
-    return { residentData, nationalityData };
-  };
-
-  const buildSocialSafetySections = (socialIndicators) => {
-    if (!socialIndicators) return [];
-    const { residentData: foreignResidentTypeData, nationalityData: foreignNationalityData } = getForeignDataBundle(socialIndicators);
-    return [
-      {
-        key: 'household',
-        label: '가구',
-        title: '가구 형태 구성',
-        description: '사회안전망 대상자의 가구 형태가 어떤 유형에 집중되어 있는지 확인합니다.',
-        data: socialIndicators.householdTypes
-      },
-      {
-        key: 'disability',
-        label: '장애',
-        title: '장애인 대분류 구성',
-        description: '장애 유형을 대분류 기준으로 묶어 대상자 구성을 간결하게 봅니다.',
-        data: socialIndicators.disabilityGroups || socialIndicators.disability
-      },
-      {
-        key: 'foreign',
-        label: '외국인',
-        title: '외국인 관련 구성',
-        description: '외국인 주민 유형과 등록외국인 국적 구성을 함께 확인합니다.',
-        data: Object.keys(foreignResidentTypeData).length > 0 ? foreignResidentTypeData : foreignNationalityData,
-        residentData: foreignResidentTypeData,
-        nationalityData: foreignNationalityData
-      }
-    ].filter(section => section.data && Object.keys(section.data).length > 0);
-  };
-
-  const getTopCompositionItems = (dataDict, limit = 5) => {
-    if (!dataDict) return [];
-    const total = Object.values(dataDict).reduce((sum, value) => sum + Number(value || 0), 0);
-    if (!total) return [];
-    return Object.entries(dataDict)
-      .sort(([, a], [, b]) => Number(b || 0) - Number(a || 0))
-      .slice(0, limit)
-      .map(([name, value]) => ({
-        name,
-        value: Number(value || 0),
-        ratio: (Number(value || 0) / total) * 100
-      }));
-  };
-
-  const aggregateNationalityComposition = (dataDict, { minValue = 100 } = {}) => {
-    if (!dataDict) return { chartData: {}, otherItems: [] };
-    const sortedItems = Object.entries(dataDict)
-      .map(([name, value]) => ({ name, value: Number(value || 0) }))
-      .filter(item => item.value > 0)
-      .sort((a, b) => b.value - a.value);
-
-    const visibleItems = [];
-    const otherItems = [];
-    sortedItems.forEach((item) => {
-      if (item.value > minValue) {
-        visibleItems.push(item);
-      } else {
-        otherItems.push(item);
-      }
-    });
-
-    const chartData = Object.fromEntries(visibleItems.map(item => [item.name, item.value]));
-    const otherTotal = otherItems.reduce((sum, item) => sum + item.value, 0);
-    if (otherTotal > 0) chartData['기타 국적'] = otherTotal;
-    return { chartData, otherItems };
-  };
-
   const renderCompositionItems = (items) => (
     <div className="space-y-3">
       {items.map(item => (
         <div key={item.name}>
           <div className="flex items-center justify-between gap-3 text-xs font-bold">
             <span className="text-slate-700 truncate">{item.name}</span>
-            <span className="text-slate-500 shrink-0">{item.value.toLocaleString()}명</span>
+            <span className="text-slate-500 shrink-0">
+              {item.value.toLocaleString()}명 · {item.ratio.toFixed(1)}%
+            </span>
           </div>
           <div className="h-2 bg-white rounded-full mt-2 overflow-hidden border border-slate-100">
             <div
@@ -750,120 +376,6 @@ function App() {
       ))}
     </div>
   );
-
-  const getCultureCompositionOption = (cultureMetrics) => {
-    if (!cultureMetrics) return {};
-    const data = [
-      { name: '도서관', value: toNumber(cultureMetrics.libraries_total), itemStyle: { color: '#4f8ee8' } },
-      { name: '공연시설', value: toNumber(cultureMetrics.public_performance_spaces), itemStyle: { color: '#2bbf8a' } },
-      { name: '전시시설', value: toNumber(cultureMetrics.public_museums_galleries), itemStyle: { color: '#f27b9a' } },
-      { name: '생활문화', value: toNumber(cultureMetrics.local_culture_welfare_facilities), itemStyle: { color: '#f4b84f' } },
-      { name: '무장애 인증', value: toNumber(cultureMetrics.barrier_free_indoor_culture_spaces), itemStyle: { color: '#35b8c8' } }
-    ].filter(item => item.value !== null && item.value > 0);
-
-    return {
-      tooltip: { trigger: 'item', confine: true },
-      legend: {
-        type: 'scroll',
-        bottom: 0,
-        left: 'center',
-        itemWidth: 14,
-        itemHeight: 9,
-        textStyle: { color: '#64748b', fontSize: 11, fontWeight: 700 }
-      },
-      series: [
-        {
-          name: '문화자원 구성',
-          type: 'pie',
-          radius: ['46%', '70%'],
-          center: ['50%', '43%'],
-          avoidLabelOverlap: true,
-          itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
-          label: { show: false },
-          labelLine: { show: false },
-          data
-        }
-      ]
-    };
-  };
-
-  const getCultureAccessBarOption = (cultureMetrics) => {
-    if (!cultureMetrics) return {};
-    const data = [
-      { name: '공공문화시설', value: toNumber(cultureMetrics.public_culture_facilities_per100k), color: '#4f8ee8' },
-      { name: '도서관', value: toNumber(cultureMetrics.libraries_per100k), color: '#6366f1' },
-      { name: '공연장', value: toNumber(cultureMetrics.public_performance_halls_per100k), color: '#2bbf8a' },
-      { name: '전시시설', value: toNumber(cultureMetrics.public_museums_galleries_per100k), color: '#f27b9a' },
-      { name: '무장애 인증', value: toNumber(cultureMetrics.barrier_free_indoor_culture_spaces_per100k), color: '#35b8c8' }
-    ].filter(item => item.value !== null);
-
-    return {
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true },
-      grid: { left: '3%', right: '4%', top: '10%', bottom: '10%', containLabel: true },
-      xAxis: {
-        type: 'value',
-        axisLabel: { color: '#64748b', fontSize: 11 }
-      },
-      yAxis: {
-        type: 'category',
-        data: data.map(item => item.name),
-        axisLabel: { color: '#475569', fontSize: 11, fontWeight: 700 }
-      },
-      series: [
-        {
-          name: '인구 10만 명당',
-          type: 'bar',
-          barWidth: 16,
-          data: data.map(item => ({
-            value: item.value,
-            itemStyle: { color: item.color, borderRadius: [0, 8, 8, 0] }
-          }))
-        }
-      ]
-    };
-  };
-
-  const formatPopulationSourceDate = (rawDate) => {
-    if (!rawDate) return null;
-    return rawDate.length === 8
-      ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
-      : rawDate;
-  };
-
-  const getPopulationSourceLabel = (population) => {
-    if (!population) return '행정동 통계 (BOM 백업)';
-    if (population.source === 'resident_registration_csv_fallback') {
-      return '주민등록인구 통계 (BOM 백업)';
-    }
-    if (population.source === 'SPOP_LOCAL_RESD_DONG') {
-      const dateText = formatPopulationSourceDate(population.referenceDate);
-      return dateText
-        ? `서울 열린데이터광장(행정동 생활인구 추정치, 기준일 ${dateText})`
-        : '서울 열린데이터광장(행정동 생활인구 추정치)';
-    }
-    if (population.source === 'living_population_unavailable') {
-      return '생활인구 API 조회 대기';
-    }
-    if (population.source === 'csv_fallback') {
-      return '행정동 통계 (BOM 백업)';
-    }
-    return population.source;
-  };
-
-  const getSocialIndicatorSourceLabel = (socialIndicators) => {
-    if (!socialIndicators) return '사회안전망 구성 데이터';
-    const dateText = formatPopulationSourceDate(socialIndicators.referenceDate);
-    if (socialIndicators.sourceLabel) {
-      return dateText ? `${socialIndicators.sourceLabel} (기준 ${dateText})` : socialIndicators.sourceLabel;
-    }
-    if (socialIndicators.source === 'kosis_social_safety_composition') {
-      return dateText ? `KOSIS 사회안전망 구성 (기준 ${dateText})` : 'KOSIS 사회안전망 구성';
-    }
-    if (socialIndicators.source === 'csv_social_safety_fallback') {
-      return '서울시 자치구 통계 (CSV 백업)';
-    }
-    return socialIndicators.source || '사회안전망 구성 데이터';
-  };
 
   const getPopulationByMode = (population) => {
     if (!population) return null;
@@ -880,57 +392,224 @@ function App() {
   const activeSocialSafetySection = socialSafetySections.find(section => section.key === socialSafetyView) || socialSafetySections[0];
   const activeSocialSafetyItems = getTopCompositionItems(activeSocialSafetySection?.data);
   const activeCultureReference = cultureEnjoymentReference2024.find(group => group.key === cultureReferenceView) || cultureEnjoymentReference2024[0];
+  const educationCategories = [
+    { key: 'elementary', label: '초등학교', color: 'text-blue-500', active: 'bg-blue-50 border-blue-200 text-blue-900', count: districtData?.cultureAndEducation?.schools?.elementary || 0 },
+    { key: 'middle', label: '중학교', color: 'text-indigo-500', active: 'bg-indigo-50 border-indigo-200 text-indigo-900', count: districtData?.cultureAndEducation?.schools?.middle || 0 },
+    { key: 'high', label: '고등학교', color: 'text-purple-500', active: 'bg-purple-50 border-purple-200 text-purple-900', count: districtData?.cultureAndEducation?.schools?.high || 0 },
+    { key: 'university', label: '대학교', color: 'text-rose-500', active: 'bg-rose-50 border-rose-200 text-rose-900', count: districtData?.cultureAndEducation?.schools?.university || 0 }
+  ];
+  const activeEducationCategory = educationCategories.find(category => category.key === educationCategory) || educationCategories[0];
+  const activeEducationList = districtData?.cultureAndEducation?.schoolDetails?.[activeEducationCategory.key] || [];
+  const educationPageSize = 10;
+  const educationTotalPages = Math.max(1, Math.ceil(activeEducationList.length / educationPageSize));
+  const safeEducationPage = Math.min(educationPage, educationTotalPages - 1);
+  const pagedEducationList = activeEducationList.slice(
+    safeEducationPage * educationPageSize,
+    safeEducationPage * educationPageSize + educationPageSize
+  );
+  const educationRangeStart = activeEducationList.length ? safeEducationPage * educationPageSize + 1 : 0;
+  const educationRangeEnd = Math.min((safeEducationPage + 1) * educationPageSize, activeEducationList.length);
+  const groupedPublicPlaces = useMemo(() => {
+    const places = libraryDataDetail?.infrastructure?.publicPlaces || [];
+    return places.reduce((groups, place) => {
+      const key = place.category || '기타 기관';
+      groups[key] = [...(groups[key] || []), place];
+      return groups;
+    }, {});
+  }, [libraryDataDetail]);
+  const sortedPublicPlaces = useMemo(
+    () => [...(libraryDataDetail?.infrastructure?.publicPlaces || [])].sort((a, b) => Number(a.distance || 0) - Number(b.distance || 0)),
+    [libraryDataDetail]
+  );
+  const publicPlaceCategories = useMemo(
+    () => ['all', ...Object.keys(groupedPublicPlaces).sort()],
+    [groupedPublicPlaces]
+  );
+  const filteredPublicPlaces = useMemo(
+    () => publicPlaceCategory === 'all'
+      ? sortedPublicPlaces
+      : sortedPublicPlaces.filter(place => (place.category || '기타 기관') === publicPlaceCategory),
+    [publicPlaceCategory, sortedPublicPlaces]
+  );
+  const publicPlacePageCount = Math.max(1, Math.ceil(filteredPublicPlaces.length / 5));
+  const safePublicPlacePage = Math.min(publicPlacePage, publicPlacePageCount - 1);
+  const visiblePublicPlaces = filteredPublicPlaces.slice(safePublicPlacePage * 5, safePublicPlacePage * 5 + 5);
+  const insightCacheStatus = llmHarness?.cacheStatus;
+  const sectionCacheStatus = llmHarness?.sectionCacheStatus;
+  const insightCacheHit = Boolean(insightCacheStatus?.hit);
+  const sectionCacheHit = Boolean(sectionCacheStatus?.hit);
+  const insightCacheUnavailable = insightCacheStatus?.available === false;
+  const insightCanGenerate = Boolean(insightCacheStatus?.canGenerate);
+  const insightGeneratedAtLabel = formatInsightGeneratedAt(insightCacheStatus?.generatedAt);
+    const normalizeInsightCardLabel = (label) => label === '검토 방향' ? '실행 방향' : label;
+    const insightCards = insightCacheHit && Array.isArray(llmHarness?.insight?.cards)
+      ? llmHarness.insight.cards.map(card => ({
+        ...card,
+        label: normalizeInsightCardLabel(card.label)
+      }))
+      : [];
+  const insightCardToneByLabel = {
+    '핵심 판단': {
+      badge: 'border-blue-100 bg-blue-50 text-blue-700',
+      dot: 'bg-blue-500',
+      top: 'from-blue-300 via-[#167BD9] to-[#0031A7]'
+    },
+    '주의 지점': {
+      badge: 'border-amber-100 bg-amber-50 text-amber-700',
+      dot: 'bg-amber-500',
+      top: 'from-amber-300 via-orange-300 to-blue-500'
+    },
+      '실행 방향': {
+        badge: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+        dot: 'bg-emerald-500',
+        top: 'from-emerald-300 via-cyan-300 to-[#167BD9]'
+    }
+  };
+  const getInsightBullets = (item) => {
+    if (Array.isArray(item?.bullets) && item.bullets.length > 0) {
+      return item.bullets.slice(0, 4);
+    }
+    return String(item?.text || '')
+      .split(/(?:\n+|[.!?。]\s+|다\.\s*|함\.\s*|됨\.\s*|필요\.\s*|가능\.\s*)/)
+      .map(text => text.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+  };
+  const insightDisplayMetaText = llmHarness
+    ? `${llmHarness.mode === 'llm' ? 'AI 생성 인사이트' : '하네스 미리보기'}${
+      llmHarness.mode === 'llm' && llmHarness.aiMeta
+        ? ` · ${llmHarness.aiMeta.billingRoute === 'direct-provider-api' ? '직접 키 사용' : 'Gateway 사용'}`
+        : llmHarness.fallbackReason
+          ? ' · 생성 실패 후 미리보기 표시'
+          : ''
+    }${insightCacheHit ? ` · DB 저장본 · ${insightGeneratedAtLabel}` : insightCacheStatus?.reason === 'cache_miss' ? ' · 저장된 인사이트 없음' : insightCacheUnavailable ? ' · 캐시 연결 대기' : ''}`
+    : 'AI 인사이트 대기';
+  const generatedInterpretations = (insightCacheHit || sectionCacheHit) ? llmHarness?.interpretations : null;
+  const socialSafetyAiInsight = generatedInterpretations?.socialSafety;
+  const socialSafetySegmentToneByKey = {
+    household: 'amber',
+    disability: 'rose',
+    foreign: 'cyan'
+  };
+  const activeSocialSafetySegmentInsight = socialSafetyAiInsight?.segments?.[socialSafetyView] || null;
+  const activeSocialSafetySegmentTone = socialSafetySegmentToneByKey[socialSafetyView] || 'indigo';
+  const insightModelBadges = getModelRecommendationBadges(
+    llmHarness?.insight?.modelRecommendation || {
+      defaultModel: 'gpt-5.4-mini',
+      costTierLabel: '균형',
+      escalationModel: 'gpt-5.4 또는 claude-sonnet-4-6'
+    }
+  ).slice(0, 3);
+
+  useEffect(() => {
+    if (activeTab !== 'district' || !districtData) {
+      setLlmHarness(null);
+      setLlmError(null);
+      setLlmLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setLlmLoading(true);
+    setLlmError(null);
+
+    axios.post('/api/llm-harness', {
+      type: 'district_screen',
+      provider: llmProviderMode,
+      forceGenerate: ['direct-openai', 'direct-gemini', 'direct-anthropic', 'openai', 'gemini', 'anthropic', 'netlify-ai-gateway'].includes(llmProviderMode),
+      districtData,
+      cultureMetrics: selectedCultureMetrics || {}
+    })
+      .then((res) => {
+        if (cancelled) return;
+        setLlmHarness(res.data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error(err);
+        setLlmHarness(null);
+        setLlmError('LLM 하네스 조회에 실패했습니다. 로컬 함수 연결 상태 확인 필요.');
+      })
+      .finally(() => {
+        if (!cancelled) setLlmLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, districtData, selectedCultureMetrics, llmProviderMode, llmRefreshNonce]);
+
+  const downloadDistrictReportMarkdown = () => {
+    const markdown = llmHarness?.report?.markdown;
+    if (!markdown) return;
+
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${selectedGu}-지역사회-인사이트-보고서.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen bg-[#F5F8FC] text-slate-900 font-sans">
       {/* 상단 고정 헤더 */}
-      <header className="sticky top-0 bg-white border-b border-slate-200 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="bg-blue-600 text-white p-2 rounded-lg">
-              <BookOpen size={24} />
-            </div>
-            <span className="font-extrabold text-2xl tracking-tight text-blue-600">LIBscope</span>
-            <span className="text-slate-400 font-medium">| 도서관 정책 의사결정 대시보드</span>
+      <header className="sticky top-0 bg-white/95 backdrop-blur border-b border-[#A7A9B4]/30 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-16 py-2 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center min-w-0">
+            <img
+              src="/brand/libscope-li-header-crop.png"
+              alt="LIBscope Library Insight Dashboard"
+              className="h-9 sm:h-11 w-auto max-w-[170px] sm:max-w-[320px] object-contain"
+            />
           </div>
 
-          <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl">
+          <div className="flex space-x-1 bg-[#F5F8FC] p-1 rounded-xl border border-[#A7A9B4]/25">
             <button
               onClick={() => setActiveTab('district')}
-              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all duration-200 ${
+              className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs sm:text-sm transition-all duration-200 ${
                 activeTab === 'district' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
+                  ? 'bg-white text-[#0031A7] shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              📊 자치구별 현황
+              <span className="inline-flex items-center gap-2">
+                <BarChart3 size={16} />
+                자치구별 현황
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('library')}
-              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all duration-200 ${
+              className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs sm:text-sm transition-all duration-200 ${
                 activeTab === 'library' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
+                  ? 'bg-white text-[#0031A7] shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              🏛️ 개별도서관별 현황
+              <span className="inline-flex items-center gap-2">
+                <Building size={16} />
+                개별도서관별 현황
+              </span>
             </button>
           </div>
         </div>
       </header>
 
       {/* 메인 콘텐츠 영역 */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         
         {/* 상단 필터 컨트롤러 */}
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-4 w-full md:w-auto">
+        <section className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full md:w-auto">
             <div className="flex flex-col">
               <label className="text-xs font-bold text-slate-400 mb-1">자치구 선택</label>
               <select
                 value={selectedGu}
                 onChange={(e) => setSelectedGu(e.target.value)}
-                className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+                className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-48"
               >
                 {guList.map(gu => (
                   <option key={gu} value={gu}>{gu}</option>
@@ -954,14 +633,27 @@ function App() {
             )}
           </div>
           
-          <div className="text-slate-500 text-sm font-semibold flex items-center gap-1">
-            <MapPin className="text-blue-500" size={18} />
-            <span>선택 지역: 서울특별시 {selectedGu}</span>
-            {activeTab === 'library' && selectedLibrary && (
-              <>
-                <ChevronRight size={16} />
-                <span className="text-blue-600 font-bold">{selectedLibrary}</span>
-              </>
+          <div className="flex flex-col items-stretch md:items-end gap-2 text-slate-500 text-sm font-semibold">
+            <div className="flex items-center justify-start md:justify-end gap-1">
+              <MapPin className="text-blue-500" size={18} />
+              <span>선택 지역: 서울특별시 {selectedGu}</span>
+              {activeTab === 'library' && selectedLibrary && (
+                <>
+                  <ChevronRight size={16} />
+                  <span className="text-blue-600 font-bold">{selectedLibrary}</span>
+                </>
+              )}
+            </div>
+            {activeTab === 'district' && (
+              <button
+                type="button"
+                onClick={() => setReportPreviewOpen(prev => !prev)}
+                disabled={llmLoading || !insightCacheHit || !llmHarness?.report}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-extrabold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FileText size={14} />
+                {reportPreviewOpen ? '자치구 보고서 미리보기 닫기' : '자치구 보고서 미리보기'}
+              </button>
             )}
           </div>
         </section>
@@ -970,7 +662,7 @@ function App() {
         {loading && (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            <p className="text-slate-500 font-bold">실시간 공공 API 데이터를 연동 중입니다...</p>
+            <p className="text-slate-500 font-bold">지역 지표와 공공 데이터를 불러오는 중입니다...</p>
           </div>
         )}
 
@@ -982,66 +674,174 @@ function App() {
 
         {/* -------------------- 탭 1: 자치구별 대시보드 뷰 -------------------- */}
         {!loading && activeTab === 'district' && districtData && (
-          <div className="space-y-8">
+          <div className="flex flex-col gap-6">
 
             {/* LLM 인사이트 프리뷰 영역 */}
-            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <section className="order-[10] relative overflow-hidden rounded-2xl border border-blue-200/70 bg-gradient-to-br from-[#001f75] via-[#0031A7] to-[#167BD9] p-4 text-white shadow-[0_22px_55px_rgba(0,49,167,0.24)] sm:p-6">
+              <div
+                className="pointer-events-none absolute inset-0 opacity-20"
+                style={{ backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.18) 0 1px, transparent 1px 12px)' }}
+              />
+              <div className="relative">
               <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="bg-blue-50 text-blue-600 p-3 rounded-xl border border-blue-100">
-                    <Lightbulb size={24} />
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="rounded-xl border border-white/25 bg-white/12 p-2.5 text-white shadow-sm sm:p-3">
+                    <Bot size={22} />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-xl text-slate-900">{selectedGu} 종합 인사이트</h3>
-                    <p className="text-xs text-slate-400 mt-1">
-                      LLM 연결 전 테스트 영역입니다. 연결 후 인구, 복지, 문화, 도서관 입지 지표를 종합해 생성됩니다.
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/12 px-2.5 py-1 text-[10px] font-black tracking-[0.14em] text-cyan-100">
+                      <Sparkles size={12} />
+                      AI 작성 영역
+                    </span>
+                    <h3 className="mt-2 font-extrabold text-lg sm:text-xl text-white">{selectedGu} 종합 인사이트</h3>
+                    <p className="text-xs font-semibold leading-relaxed text-blue-100/90 mt-1">
+                      인구, 복지, 문화, 도서관 입지 지표를 함께 묶어 지역 판단의 출발점을 정리합니다.
                     </p>
+                    <p className="text-[10px] text-cyan-100/90 font-bold leading-relaxed mt-2">{insightDisplayMetaText}</p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsInsightExpanded(prev => !prev)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-100 transition-colors"
-                >
-                  {isInsightExpanded ? '접기' : '펼치기'}
-                  <ChevronDown
-                    size={16}
-                    className={`transition-transform ${isInsightExpanded ? 'rotate-180' : ''}`}
-                  />
-                </button>
+                <div className="flex flex-col items-start lg:items-end gap-2">
+                  <div className="hidden sm:flex flex-wrap justify-start lg:justify-end gap-2">
+                    {insightModelBadges.map(badge => (
+                      <span key={`insight-model-${badge.label}`} className="rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[10px] font-extrabold text-blue-50 shadow-sm">
+                        {badge.label} {badge.value}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {insightCacheHit ? (
+                      <div className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm">
+                        <Calendar size={14} />
+                        인사이트 생성일 {insightGeneratedAtLabel}
+                      </div>
+                    ) : insightCanGenerate ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLlmProviderMode('direct-openai');
+                          setLlmRefreshNonce(prev => prev + 1);
+                        }}
+                        disabled={llmLoading}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/50 bg-white px-3 py-2 text-xs font-extrabold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Sparkles size={14} />
+                        내 키로 AI 생성
+                      </button>
+                    ) : (
+                      <div className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs font-extrabold text-blue-50">
+                        <Sparkles size={14} />
+                        캐시 연결 확인 중
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {[
-                  '선택 지역의 인구 구조와 복지 수요를 함께 검토해 도서관 서비스 우선순위를 정리합니다.',
-                  '문화시설, 생활문화 기반, 주변 공공기관 정보를 결합해 지역 내 협력 가능 지점을 탐색합니다.',
-                  '최종 보고서는 수치 비교보다 정책 판단에 필요한 맥락과 실행 후보를 중심으로 구성됩니다.'
-                ].map((sentence, index) => (
-                  <div key={sentence} className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                    <span className="text-[10px] font-extrabold text-blue-600">PREVIEW {index + 1}</span>
-                    <p className="text-sm font-bold text-slate-700 leading-relaxed mt-2">{sentence}</p>
-                  </div>
-                ))}
-              </div>
+              {insightCards.length > 0 ? (
+                <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-2.5 sm:gap-3">
+                  {insightCards.map(item => {
+                    const tone = insightCardToneByLabel[item.label] || insightCardToneByLabel['핵심 판단'];
+                    return (
+                    <div key={item.label} className="relative min-h-40 overflow-hidden rounded-xl border border-white/80 bg-white/95 p-4 text-slate-900 shadow-lg sm:p-5">
+                      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${tone.top}`} />
+                      <div className="pointer-events-none absolute right-3 top-3 select-none text-[8px] font-black tracking-[0.18em] text-blue-100">
+                        AI
+                      </div>
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-extrabold ${tone.badge}`}>{item.label}</span>
+                      <ul className="mt-3 space-y-2">
+                        {getInsightBullets(item).map((bullet, index) => (
+                          <li key={`${item.label}-${index}`} className="flex gap-2 text-xs sm:text-[13px] font-extrabold leading-relaxed text-slate-700">
+                            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
+                            <span>{bullet}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    );
+                  })}
+                </div>
+              ) : !llmLoading && (
+                <div className="mt-5 rounded-xl border border-dashed border-white/35 bg-white/12 px-4 py-4 text-xs font-bold leading-relaxed text-blue-50">
+                  <span className="mb-2 inline-flex rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-black tracking-[0.12em] text-cyan-100">
+                    AI 인사이트 대기
+                  </span>
+                  <p>
+                    {insightCanGenerate
+                      ? '현재 지표 스냅샷에 저장된 종합 인사이트가 없습니다. 내 키로 AI 생성을 실행하면 전문 해석 결과가 DB에 저장되고 이후에는 생성일만 표시됩니다.'
+                      : '현재 캐시 저장소 상태를 확인 중입니다. 저장 가능한 상태가 확인되면 AI 생성 버튼이 활성화됩니다.'}
+                  </p>
+                </div>
+              )}
 
-              {isInsightExpanded && (
-                <div className="mt-4 bg-blue-50/60 border border-blue-100 rounded-2xl p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <BarChart3 size={18} className="text-blue-600" />
-                    <h4 className="font-extrabold text-sm text-blue-800">확장 인사이트 보고서 영역</h4>
+              {llmLoading && (
+                <div className="mt-4 rounded-xl border border-white/20 bg-white/12 px-4 py-3 text-xs font-bold text-blue-50">
+                  {llmProviderMode === 'cache' ? 'DB 캐시 확인 중...' : llmProviderMode === 'mock' ? 'mock LLM 하네스 생성 중...' : '직접 키로 AI 해석 생성 중...'}
+                </div>
+              )}
+
+              {insightCacheUnavailable && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                  DB 캐시 테이블이 아직 연결되지 않아 생성 결과가 재사용되지 않을 수 있습니다. Supabase LLM 캐시 스키마 적용 후 자동 저장됩니다.
+                </div>
+              )}
+
+              {llmHarness?.fallbackReason && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                  직접 AI 호출 실패로 mock 결과를 표시합니다. {llmHarness.aiMeta?.error || ''}
+                </div>
+              )}
+
+              {llmError && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                  {llmError}
+                </div>
+              )}
+
+              {reportPreviewOpen && insightCacheHit && llmHarness?.report && (
+                <div className="mt-6 rounded-2xl border border-white/70 bg-white/95 p-5 text-slate-900 shadow-xl">
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4">
+                    <div>
+                      <p className="inline-flex items-center gap-1.5 rounded-full border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-[10px] font-black tracking-[0.12em] text-blue-700">
+                        <Sparkles size={11} />
+                        AI 보고서 초안
+                      </p>
+                      <h4 className="text-lg font-extrabold text-slate-900 mt-1">{llmHarness.report.title}</h4>
+                      <p className="text-xs font-bold text-slate-500 mt-1">{llmHarness.report.subtitle}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={downloadDistrictReportMarkdown}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-extrabold text-blue-700 shadow-sm hover:bg-blue-50"
+                    >
+                      <Download size={14} />
+                      Markdown 다운로드
+                    </button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-blue-950/70 leading-relaxed">
-                    <p>지역 요약, 주요 지표 변화, 서울 평균 대비 차이를 문단형 보고서로 보여줄 영역입니다.</p>
-                    <p>인구·고령층·외국인 주민·장애인·수급자 구성과 문화·교육 인프라를 함께 묶습니다.</p>
-                    <p>LLM 연결 후에는 근거 지표, 해석, 정책 실행 후보를 접힌 블록 안에서 확장 표시합니다.</p>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {llmHarness.report.sections.map(section => (
+                      <div key={section.heading} className="rounded-xl border border-cyan-100 bg-gradient-to-br from-white to-cyan-50/45 p-4 shadow-sm">
+                        <h5 className="text-sm font-extrabold text-slate-800">{section.heading}</h5>
+                        <p className="text-xs font-bold text-slate-600 leading-relaxed mt-2">{section.body}</p>
+                        <ul className="mt-3 list-disc space-y-2 pl-4">
+                          {section.bullets.slice(0, 3).map((bullet, index) => (
+                            <li key={`${section.heading}-${index}`} className="text-[11px] font-semibold text-slate-500 leading-relaxed">
+                              {bullet}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
+
+              </div>
             </section>
             
             {/* 자치구 개요 카드 */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between h-36">
+            <div className="order-[20] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="order-1 bg-blue-50/40 rounded-xl shadow-sm border border-blue-200 p-4 sm:p-5 flex flex-col justify-between min-h-32 sm:h-36">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">구내 총 인구</p>
@@ -1058,7 +858,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between h-36">
+              <div className="order-3 bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col justify-between min-h-32 sm:h-36">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">공공도서관 수</p>
@@ -1075,7 +875,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between h-36">
+              <div className="order-2 bg-rose-50/40 rounded-xl shadow-sm border border-rose-200 p-4 sm:p-5 flex flex-col justify-between min-h-32 sm:h-36">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">기초생활 수급률</p>
@@ -1095,7 +895,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between h-36">
+              <div className="order-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col justify-between min-h-32 sm:h-36">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">당월 문화행사 수</p>
@@ -1114,17 +914,17 @@ function App() {
             </div>
 
             {/* 인구 구조 분석 (ECharts) */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
+            <div className="order-[30] grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 lg:col-span-2 flex flex-col justify-between">
                 <div>
                   <div className="flex items-start justify-between gap-4">
-                    <h4 className="font-extrabold text-lg text-slate-800">👥 연령대별 인구 분포 (65세 이상 강조)</h4>
+                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Users size={20} className="text-blue-600" />연령대별 인구 분포</h4>
                     <PopulationModeToggle populationMode={populationMode} onChange={setPopulationMode} />
                   </div>
-                  <p className="text-xs text-slate-400 mb-4">65세 이상 연령대는 주황색으로 강조 표시됩니다.</p>
+                  <p className="text-xs text-slate-400 mb-4">0-9세는 하늘색, 10-64세는 노랑, 65세 이상은 빨강으로 구분합니다.</p>
                 </div>
                 <div className="h-80">
-                  <ReactECharts 
+                  <ResponsiveEChart
                     option={getAgeChartOption(activeDistrictPopulation?.ageDistribution)} 
                     style={{ height: '100%', width: '100%' }}
                   />
@@ -1134,12 +934,12 @@ function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col justify-between">
                 <div>
                   <h4 className="font-extrabold text-lg text-slate-800 mb-6">👫 성별 비율</h4>
                 </div>
                 <div className="h-80">
-                  <ReactECharts 
+                  <ResponsiveEChart
                     option={getGenderChartOption(activeDistrictPopulation?.genderRatio)} 
                     style={{ height: '100%', width: '100%' }}
                   />
@@ -1150,14 +950,24 @@ function App() {
               </div>
             </div>
 
-            {/* 문화 역량·향유 지표 테스트 섹션 */}
+            <MetricInterpretationPanel
+              packet={generatedInterpretations?.population}
+              tone="blue"
+              loading={llmLoading}
+              error={llmError}
+              className="order-[40]"
+              variant="strip"
+              pendingTitle="인구구조 해석"
+            />
+
+            {/* 문화 역량·향유 지표 섹션 */}
             {selectedCultureMetrics && (
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="order-[60] bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-6">
                   <div>
-                    <h4 className="font-extrabold text-lg text-slate-800">🎭 문화 역량·향유 지표 테스트</h4>
+                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Theater size={20} className="text-rose-600" />문화 역량·향유 지표</h4>
                     <p className="text-xs text-slate-400 mt-1">
-                      인사이트 문장 생성 전, 자치구 문화 지표를 별도 섹션으로 읽기 위한 화면 구성안입니다.
+                      자치구 문화 기반과 서울시 문화향유 참고값을 함께 보며 문화 접근성의 맥락을 확인합니다.
                     </p>
                   </div>
                   <div className="text-[10px] text-slate-400 font-medium lg:text-right">
@@ -1165,7 +975,19 @@ function App() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div className="mb-5 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-rose-100 bg-rose-50 px-3 py-1.5 text-[11px] font-extrabold text-rose-700">
+                    자치구 직접 지표: 시설 수·접근성·정책 기반
+                  </span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-extrabold text-slate-600">
+                    서울시 참고값: 집단별 문화향유 기준선
+                  </span>
+                  <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-extrabold text-blue-700">
+                    LLM 연결: 공급 기반과 향유 기준의 결합 해석
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
                   <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                     {cultureMetricGroups.map(group => (
                       <div key={group.key} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 min-h-44 flex flex-col justify-between">
@@ -1199,7 +1021,7 @@ function App() {
                         시설 유형이 어느 자원에 상대적으로 집중되어 있는지 확인하는 참고 차트입니다.
                       </p>
                       <div className="h-72 mt-2">
-                        <ReactECharts option={getCultureCompositionOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
+                        <ResponsiveEChart option={getCultureCompositionOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
                       </div>
                     </div>
 
@@ -1209,7 +1031,7 @@ function App() {
                         인구 10만 명당 기준으로 서로 다른 문화자원을 나란히 비교합니다.
                       </p>
                       <div className="h-64 mt-2">
-                        <ReactECharts option={getCultureAccessBarOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
+                        <ResponsiveEChart option={getCultureAccessBarOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
                       </div>
                     </div>
                   </div>
@@ -1245,7 +1067,13 @@ function App() {
                         );
                       })}
                     </div>
-                    <p className={`text-[10px] font-bold mb-3 ${activeCultureReference.theme.text}`}>{activeCultureReference.denominator}</p>
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 mb-3">
+                      <p className={`text-[10px] font-bold ${activeCultureReference.theme.text}`}>{activeCultureReference.denominator}</p>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-bold text-slate-500">
+                        <span className="rounded-full border border-slate-200 bg-white/80 px-2 py-1">10% 미만: 낮은 응답/희소 항목</span>
+                        <span className="rounded-full border border-slate-200 bg-white/80 px-2 py-1">50% 초과: 높은 응답 항목</span>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {activeCultureReference.items.map(item => (
                         <div
@@ -1290,67 +1118,153 @@ function App() {
                     </div>
                   </div>
                 </div>
+
+                <div className="mt-5">
+                  <MetricInterpretationPanel
+                    packet={generatedInterpretations?.culture}
+                    tone="rose"
+                    loading={llmLoading}
+                    error={llmError}
+                    variant="strip"
+                    pendingTitle="문화 역량·향유 해석"
+                  />
+                </div>
               </div>
             )}
 
             {/* 교육 인프라 분석 */}
-            <div className="grid grid-cols-1 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
+            <div className="order-[70] grid grid-cols-1 gap-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-4">🏫 교육기관 인프라 (초·중·고·대학교 수)</h4>
-                  <div className="grid grid-cols-4 gap-4 text-center mt-6">
-                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                      <GraduationCap className="mx-auto text-blue-500 mb-2" size={32} />
-                      <span className="text-slate-400 text-xs font-bold">초등학교</span>
-                      <p className="text-2xl font-extrabold text-slate-800 mt-1">
-                        {formatCount(districtData.cultureAndEducation?.schools?.elementary, '개교')}
-                      </p>
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-5">
+                    <div>
+                      <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><School size={20} className="text-indigo-600" />교육기관 인프라</h4>
+                      <p className="text-xs text-slate-400 mt-1">학교급을 선택하면 해당 자치구 내 학교명과 주소를 목록으로 확인합니다.</p>
                     </div>
-                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                      <GraduationCap className="mx-auto text-indigo-500 mb-2" size={32} />
-                      <span className="text-slate-400 text-xs font-bold">중학교</span>
-                      <p className="text-2xl font-extrabold text-slate-800 mt-1">
-                        {formatCount(districtData.cultureAndEducation?.schools?.middle, '개교')}
-                      </p>
-                    </div>
-                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                      <GraduationCap className="mx-auto text-purple-500 mb-2" size={32} />
-                      <span className="text-slate-400 text-xs font-bold">고등학교</span>
-                      <p className="text-2xl font-extrabold text-slate-800 mt-1">
-                        {formatCount(districtData.cultureAndEducation?.schools?.high, '개교')}
-                      </p>
-                    </div>
-                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                      <GraduationCap className="mx-auto text-rose-500 mb-2" size={32} />
-                      <span className="text-slate-400 text-xs font-bold">대학교</span>
-                      <p className="text-2xl font-extrabold text-slate-800 mt-1">
-                        {formatCount(districtData.cultureAndEducation?.schools?.university, '개교')}
-                      </p>
-                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium lg:text-right">
+                      출처: 서울 열린데이터광장(나이스 학교 정보 및 대학 전문대학 DB API)
+                    </span>
                   </div>
-                </div>
-                <div className="text-[10px] text-slate-400 font-medium mt-4 text-right">
-                  출처: 서울 열린데이터광장(나이스 학교 정보 및 대학 전문대학 DB API)
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {educationCategories.map(category => {
+                      const isActive = activeEducationCategory.key === category.key;
+                      return (
+                        <button
+                          key={category.key}
+                          type="button"
+                          onClick={() => {
+                            setEducationCategory(category.key);
+                            setEducationPage(0);
+                          }}
+                          className={`text-left rounded-xl border p-4 transition-colors ${
+                            isActive ? category.active : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <GraduationCap className={`${category.color} mb-2`} size={24} />
+                          <span className="text-xs font-bold opacity-70">{category.label}</span>
+                          <p className="text-2xl font-extrabold mt-1">{formatCount(category.count, '개교')}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className={`mt-5 rounded-xl border p-4 ${activeEducationCategory.active}`}>
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                      <div>
+                        <p className="text-[10px] font-extrabold opacity-70">선택 교육기관</p>
+                        <h5 className="text-base font-extrabold mt-1">{activeEducationCategory.label} 목록</h5>
+                      </div>
+                      <span className="text-xs font-extrabold">{activeEducationList.length || activeEducationCategory.count}개교</span>
+                    </div>
+
+                    {activeEducationList.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          {pagedEducationList.map((school, index) => (
+                            <div
+                              key={`${school.name}-${safeEducationPage}-${index}`}
+                              className="min-h-16 rounded-lg border border-white/70 bg-white px-3 py-2.5"
+                            >
+                              <p className="text-sm font-extrabold text-slate-800 truncate">{school.name || '-'}</p>
+                              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed line-clamp-2">{school.address || '주소 정보 없음'}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <p className="text-[10px] font-bold opacity-70">
+                            {educationRangeStart}-{educationRangeEnd} / {activeEducationList.length}개교 표시
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEducationPage(prev => Math.max(0, prev - 1))}
+                              disabled={safeEducationPage === 0}
+                              className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+                            >
+                              이전
+                            </button>
+                            <span className="min-w-14 text-center text-xs font-extrabold opacity-70">
+                              {safeEducationPage + 1}/{educationTotalPages}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setEducationPage(prev => Math.min(educationTotalPages - 1, prev + 1))}
+                              disabled={safeEducationPage >= educationTotalPages - 1}
+                              className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+                            >
+                              다음
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-8 text-center">
+                        <p className="text-sm font-extrabold text-slate-600">상세 학교 목록 대기</p>
+                        <p className="text-xs text-slate-400 mt-1">현재 응답에는 개수만 제공됩니다. API 상세 목록이 수신되면 학교명과 주소가 표시됩니다.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-5">
+                    <MetricInterpretationPanel
+                      packet={generatedInterpretations?.education}
+                      tone="indigo"
+                      loading={llmLoading}
+                      error={llmError}
+                      variant="strip"
+                      pendingTitle="교육 인프라 해석"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* 사회안전망 대상자 구성 분석 */}
             {activeSocialSafetySection && (
-              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <section className="order-[80] bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-6">
                   <div>
-                    <h4 className="font-extrabold text-lg text-slate-800">🌐 사회안전망 대상자 구성 분석</h4>
-                    <p className="text-xs text-slate-400 mt-1">
-                      구성 지표를 한 번에 모두 쌓기보다, 필요한 유형을 선택해 세부 비중을 확인합니다.
-                    </p>
+                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Shield size={20} className="text-blue-600" />사회안전망 대상자 구성 분석</h4>
                   </div>
                   <span className="text-[10px] text-slate-400 font-medium lg:text-right">
                     출처: {getSocialIndicatorSourceLabel(districtData.socialIndicators)}
                   </span>
                 </div>
 
-                <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
+                <div className="mb-5">
+                  <MetricInterpretationPanel
+                    packet={socialSafetyAiInsight}
+                    tone="indigo"
+                    loading={llmLoading}
+                    error={llmError}
+                    variant="strip"
+                    pendingTitle="사회안전망 종합 해석"
+                    pendingMessage="가구·장애·외국인 구성 해석이 생성되면 이 영역에 종합 판단이 표시됩니다."
+                  />
+                </div>
+
+                <div className="flex gap-3 overflow-x-auto pb-2 mb-5">
                   {socialSafetySections.map(section => {
                     const topItem = getTopCompositionItems(section.data, 1)[0];
                     const isActive = activeSocialSafetySection.key === section.key;
@@ -1359,16 +1273,16 @@ function App() {
                         key={section.key}
                         type="button"
                         onClick={() => setSocialSafetyView(section.key)}
-                        className={`min-w-52 flex-1 text-left rounded-2xl border p-4 transition-colors ${
+                        className={`min-w-52 flex-1 text-left rounded-xl border p-3.5 transition-colors ${
                           isActive
-                            ? 'bg-blue-50 border-blue-200 text-blue-900'
-                            : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'
+                            ? section.theme.active
+                            : section.theme.inactive
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm font-extrabold">{section.label}</span>
                           <span className={`text-[10px] font-extrabold px-2 py-1 rounded-full ${
-                            isActive ? 'bg-blue-100 text-blue-700' : 'bg-white text-slate-500'
+                            isActive ? section.theme.pill : 'bg-slate-50 text-slate-500'
                           }`}>
                             {Object.keys(section.data).length}개 항목
                           </span>
@@ -1403,28 +1317,37 @@ function App() {
                         })()
                       }
                     ].filter(panel => panel.data && Object.keys(panel.data).length > 0).map(panel => (
-                      <div key={panel.title} className="bg-slate-50 border border-slate-100 rounded-2xl p-5">
+                      <div key={panel.title} className={`min-w-0 border rounded-2xl p-5 ${activeSocialSafetySection.theme.panel}`}>
                         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-4">
                           <div>
-                            <h5 className="font-extrabold text-base text-slate-800">{panel.title}</h5>
+                            <h5 className={`font-extrabold text-base ${activeSocialSafetySection.theme.text}`}>{panel.title}</h5>
                             <p className="text-xs text-slate-500 leading-relaxed mt-1">{panel.description}</p>
                           </div>
-                          <span className="text-[10px] font-extrabold text-slate-500 bg-white border border-slate-100 rounded-full px-3 py-1">
+                          <span className={`text-[10px] font-extrabold rounded-full px-3 py-1 ${activeSocialSafetySection.theme.pill}`}>
                             100% 누적 구성
                           </span>
                         </div>
-                        <div className="h-40">
-                          <ReactECharts
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+                          {getTopCompositionItems(panel.data, 3).map(item => (
+                            <div key={`${panel.title}-${item.name}`} className={`rounded-lg border px-3 py-2 ${activeSocialSafetySection.theme.item}`}>
+                              <p className={`text-[10px] font-bold ${activeSocialSafetySection.theme.text}`}>{item.name}</p>
+                              <p className="text-sm font-extrabold text-slate-800 mt-0.5">{item.value.toLocaleString()}명</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="h-40 w-full min-w-0">
+                          <ResponsiveEChart
                             option={getStackedBarOption(panel.label, panel.data)}
                             style={{ height: '100%', width: '100%' }}
                           />
                         </div>
-                        <div className="mt-5 bg-white border border-slate-100 rounded-2xl p-4">
-                          <h6 className="font-extrabold text-sm text-slate-800 mb-4">구성 항목</h6>
+                        <div className={`mt-5 border rounded-xl p-4 ${activeSocialSafetySection.theme.item}`}>
+                          <h6 className={`font-extrabold text-sm mb-4 ${activeSocialSafetySection.theme.text}`}>상세 항목</h6>
                           {renderCompositionItems(getTopCompositionItems(panel.data, 8))}
                           {panel.otherItems.length > 0 && (
                             <p className="text-[10px] leading-relaxed text-slate-400 mt-4">
-                              기타 국적 포함: {panel.otherItems.map(item => `${item.name} ${item.value.toLocaleString()}명`).join(', ')}
+                              기타 국적 포함: {panel.otherItems.slice(0, 12).map(item => `${item.name} ${item.value.toLocaleString()}명`).join(', ')}
+                              {panel.otherItems.length > 12 ? ` 외 ${panel.otherItems.length - 12}개` : ''}
                             </p>
                           )}
                         </div>
@@ -1441,31 +1364,70 @@ function App() {
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-                    <div className="xl:col-span-3 bg-slate-50 border border-slate-100 rounded-2xl p-5">
-                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-4">
-                        <div>
-                          <h5 className="font-extrabold text-base text-slate-800">{activeSocialSafetySection.title}</h5>
-                          <p className="text-xs text-slate-500 leading-relaxed mt-1">{activeSocialSafetySection.description}</p>
-                        </div>
-                        <span className="text-[10px] font-extrabold text-slate-500 bg-white border border-slate-100 rounded-full px-3 py-1">
-                          100% 누적 구성
-                        </span>
+                  <div className={`min-w-0 border rounded-2xl p-5 ${activeSocialSafetySection.theme.panel}`}>
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-4">
+                      <div>
+                        <h5 className={`font-extrabold text-base ${activeSocialSafetySection.theme.text}`}>{activeSocialSafetySection.title}</h5>
+                        <p className="text-xs text-slate-500 leading-relaxed mt-1">{activeSocialSafetySection.description}</p>
                       </div>
-                      <div className="h-44">
-                        <ReactECharts
-                          option={getStackedBarOption(activeSocialSafetySection.label, activeSocialSafetySection.data)}
-                          style={{ height: '100%', width: '100%' }}
-                        />
+                      <span className={`text-[10px] font-extrabold rounded-full px-3 py-1 ${activeSocialSafetySection.theme.pill}`}>
+                        100% 누적 구성
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_2fr] gap-5">
+                      <div className="space-y-4">
+                        <div>
+                          <p className={`text-[10px] font-extrabold ${activeSocialSafetySection.theme.text}`}>대표 수치</p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2">
+                          {activeSocialSafetyItems.slice(0, 3).map(item => (
+                            <div key={`${activeSocialSafetySection.key}-${item.name}`} className={`rounded-lg border px-3 py-2 ${activeSocialSafetySection.theme.item}`}>
+                              <p className={`text-[10px] font-bold ${activeSocialSafetySection.theme.text}`}>{item.name}</p>
+                              <p className="text-sm font-extrabold text-slate-800 mt-0.5">{item.value.toLocaleString()}명</p>
+                            </div>
+                          ))}
+                        </div>
+                        {activeSocialSafetySection.key === 'disability' && (
+                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                            장애 대분류는 신체/운동, 감각/의사소통, 내부기관/만성, 발달, 정신, 기타 기준으로 세부 유형을 묶은 값입니다.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="h-44 w-full min-w-0">
+                          <ResponsiveEChart
+                            option={getStackedBarOption(activeSocialSafetySection.label, activeSocialSafetySection.data)}
+                            style={{ height: '100%', width: '100%' }}
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    <div className="xl:col-span-2 bg-slate-50 border border-slate-100 rounded-2xl p-5">
-                      <h5 className="font-extrabold text-base text-slate-800 mb-4">상위 구성 항목</h5>
+                    <div className={`mt-5 border rounded-xl p-4 ${activeSocialSafetySection.theme.item}`}>
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-4">
+                        <div>
+                          <h5 className={`font-extrabold text-sm ${activeSocialSafetySection.theme.text}`}>상세 항목</h5>
+                        </div>
+                        <span className={`text-[10px] font-extrabold rounded-full px-3 py-1 ${activeSocialSafetySection.theme.pill}`}>
+                          {Object.keys(activeSocialSafetySection.data).length}개 항목
+                        </span>
+                      </div>
                       {renderCompositionItems(activeSocialSafetyItems)}
                     </div>
                   </div>
                 )}
+
+                <div className="mt-5">
+                  <MetricInterpretationPanel
+                    packet={activeSocialSafetySegmentInsight}
+                    tone={activeSocialSafetySegmentTone}
+                    variant="strip"
+                    pendingTitle={`${activeSocialSafetySection.label} 해석`}
+                    pendingMessage="선택한 대상자 구성에 대한 인사이트가 생성되면 이 영역에 표시됩니다."
+                  />
+                </div>
               </section>
             )}
 
@@ -1475,6 +1437,39 @@ function App() {
         {/* -------------------- 탭 2: 개별도서관별 대시보드 뷰 -------------------- */}
         {!loading && activeTab === 'library' && libraryDataDetail && (
           <div className="space-y-8">
+            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="flex items-start gap-4">
+                <div className="bg-indigo-50 text-indigo-600 p-3 rounded-xl border border-indigo-100">
+                  <Sparkles size={24} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-xl text-slate-900">{libraryDataDetail.library} 입지 요약</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    반경 2km 인구, 수급자 규모, 주변 공공기관·문화시설을 함께 보며 서비스 협력 가능성을 확인합니다.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <span className="text-[10px] font-extrabold text-blue-600">이용권역</span>
+                  <p className="text-sm font-bold text-slate-700 mt-2">
+                    반경 2km 내 {formatCount(activeLibraryPopulation?.total, '명')} 규모의 잠재 이용권역을 봅니다.
+                  </p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <span className="text-[10px] font-extrabold text-rose-600">복지 수요</span>
+                  <p className="text-sm font-bold text-slate-700 mt-2">
+                    인접 행정동 평균 수급자수 {libraryDataDetail.welfare.avgRecipientCount.toLocaleString()}명을 기준으로 접근 지원 필요성을 검토합니다.
+                  </p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <span className="text-[10px] font-extrabold text-emerald-600">협력 자원</span>
+                  <p className="text-sm font-bold text-slate-700 mt-2">
+                    주변 공공기관·문화시설 {libraryDataDetail.infrastructure.publicPlaces?.length || 0}곳과 문화행사 {libraryDataDetail.infrastructure.nearbyEvents?.length || 0}건을 함께 확인합니다.
+                  </p>
+                </div>
+              </div>
+            </section>
             
             {/* 개요 정보 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1538,12 +1533,12 @@ function App() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
                 <div>
                   <div className="flex items-start justify-between gap-4 mb-4">
-                    <h4 className="font-extrabold text-lg text-slate-800">👥 도서관 반경 2km 내 인구 분포 (65세 이상 강조)</h4>
+                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Users size={20} className="text-blue-600" />도서관 반경 2km 내 인구 분포</h4>
                     <PopulationModeToggle populationMode={populationMode} onChange={setPopulationMode} />
                   </div>
                 </div>
                 <div className="h-80">
-                  <ReactECharts 
+                  <ResponsiveEChart
                     option={getAgeChartOption(activeLibraryPopulation?.ageDistribution)} 
                     style={{ height: '100%', width: '100%' }}
                   />
@@ -1558,7 +1553,7 @@ function App() {
                   <h4 className="font-extrabold text-lg text-slate-800 mb-4">👫 성별 비율</h4>
                 </div>
                 <div className="h-80">
-                  <ReactECharts 
+                  <ResponsiveEChart
                     option={getGenderChartOption(activeLibraryPopulation?.genderRatio)} 
                     style={{ height: '100%', width: '100%' }}
                   />
@@ -1571,9 +1566,9 @@ function App() {
 
             {/* 지도 공간 분석 및 인프라 매핑 */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-3 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-2">📍 {libraryDataDetail.library} 주변 입지 분석</h4>
+                  <h4 className="font-extrabold text-lg text-slate-800 mb-2 flex items-center gap-2"><MapPinned size={20} className="text-blue-600" />{libraryDataDetail.library} 주변 입지 분석</h4>
                   <p className="text-xs text-slate-400 mb-4">
                     빨간색 원: 1km 반경 (문화행사 연동) | 파란색 원: 2km 반경 (공공기관 연동)
                   </p>
@@ -1584,34 +1579,13 @@ function App() {
                   style={{ minHeight: '450px' }}
                 >
                   {mapError && (
-                    <div className="absolute inset-0 bg-slate-900/95 text-white p-6 flex flex-col justify-center items-center rounded-xl z-10 overflow-y-auto">
-                      <div className="bg-rose-500/20 text-rose-300 p-4 rounded-xl border border-rose-500/30 mb-4 max-w-md text-center">
-                        <p className="font-extrabold text-lg">⚠️ 카카오 지도 로드 실패</p>
-                        <p className="text-xs mt-1">{mapError}</p>
-                      </div>
-                      <div className="text-left text-xs text-slate-300 space-y-2 max-w-md bg-slate-800/80 p-4 rounded-xl border border-slate-700">
-                        <p className="font-bold text-sm text-blue-400">🛠️ 해결 방법 가이드:</p>
-                        <ol className="list-decimal pl-4 space-y-2">
-                          <li>
-                            <strong>카카오 디벨로퍼스 로그인</strong>: <a href="https://developers.kakao.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">developers.kakao.com</a> 접속
-                          </li>
-                          <li>
-                            <strong>도메인 등록 확인</strong>: [내 애플리케이션] &gt; [앱 설정] &gt; [플랫폼] &gt; [Web 플랫폼 등록] 메뉴 이동
-                          </li>
-                          <li>
-                            <strong>도메인 주소 추가</strong>: 아래 주소들을 줄바꿈으로 모두 입력 후 저장:
-                            <pre className="bg-slate-950 p-2 rounded text-[10px] text-emerald-400 font-mono mt-1">
-                              http://localhost:3000&#10;http://localhost:5173&#10;http://127.0.0.1:3000&#10;http://127.0.0.1:5173
-                            </pre>
-                          </li>
-                          <li>
-                            <strong>앱 키 일치 확인</strong>: [앱 설정] &gt; [앱 키]의 <strong>JavaScript 키</strong>가 아래와 같은지 확인하세요:
-                            <code className="block bg-slate-950 p-1 rounded text-[10px] text-amber-400 font-mono mt-1 select-all">{KAKAO_JS_KEY}</code>
-                          </li>
-                          <li>
-                            <strong>브라우저 캐시 새로고침</strong>: 설정 완료 후 브라우저에서 <kbd className="bg-slate-700 px-1 rounded text-white font-sans text-[10px]">Ctrl + F5</kbd> (또는 강력 새로고침)를 눌러주세요.
-                          </li>
-                        </ol>
+                    <div className="absolute inset-0 bg-slate-900/90 text-white p-6 flex flex-col justify-center items-center rounded-xl z-10">
+                      <div className="bg-rose-500/20 text-rose-100 p-5 rounded-xl border border-rose-400/30 max-w-md text-center">
+                        <p className="font-extrabold text-lg">지도 정보를 불러오지 못했습니다</p>
+                        <p className="text-xs mt-2 text-rose-100/80">{mapError}</p>
+                        <p className="text-xs mt-3 text-slate-300 leading-relaxed">
+                          주변 공공기관·문화시설 목록과 행정동 정보는 계속 확인할 수 있습니다. 지도 도메인 설정은 관리자 환경에서 점검이 필요합니다.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -1624,43 +1598,130 @@ function App() {
                 <div className="text-[10px] text-slate-400 font-medium mt-3 text-right">
                   출처: 카카오 맵 API SDK
                 </div>
-              </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between" style={{ maxHeight: '565px' }}>
-                <div>
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-extrabold text-lg text-slate-800">🏢 주변 공공기관·문화시설 정보 (2km 이내)</h4>
+                <div className="mt-6 border-t border-slate-100 pt-5">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+                    <h5 className="font-extrabold text-base text-slate-800 flex items-center gap-2"><Building size={18} className="text-indigo-600" />주변 공공기관·문화시설 정보 (2km 이내)</h5>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      출처: 카카오 Local API (공공기관/문화시설 카테고리 검색)
+                    </span>
                   </div>
-                  <div className="overflow-y-auto space-y-3 pr-2" style={{ maxHeight: '440px' }}>
-                    {libraryDataDetail.infrastructure.publicPlaces && libraryDataDetail.infrastructure.publicPlaces.length > 0 ? (
-                      libraryDataDetail.infrastructure.publicPlaces.map((place, idx) => (
-                        <div key={idx} className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex items-start space-x-3">
-                          <div className="bg-indigo-50 text-indigo-600 p-2 rounded-lg mt-0.5"><Building size={16} /></div>
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">{place.name}</p>
-                            <p className="text-xs text-slate-400 line-clamp-1">{place.address}</p>
-                            {place.category && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 mr-1 inline-block ${
+                  {sortedPublicPlaces.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {Object.entries(groupedPublicPlaces).map(([category, places]) => {
+                          const nearest = [...places].sort((a, b) => Number(a.distance || 0) - Number(b.distance || 0))[0];
+                          const tone = category === '문화시설'
+                            ? 'bg-rose-50 border-rose-100 text-rose-700'
+                            : 'bg-indigo-50 border-indigo-100 text-indigo-700';
+                          return (
+                            <div key={category} className={`rounded-xl border p-4 ${tone}`}>
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-extrabold">{category}</p>
+                                <span className="text-lg font-extrabold">{places.length}곳</span>
+                              </div>
+                              {nearest && (
+                                <p className="text-[10px] font-bold mt-2 opacity-80">
+                                  최근접: {nearest.name} · {nearest.distance.toLocaleString()}m
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-slate-700">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-extrabold">전체 검색 결과</p>
+                            <span className="text-lg font-extrabold">{sortedPublicPlaces.length}곳</span>
+                          </div>
+                          <p className="text-[10px] font-bold mt-2 text-slate-500">
+                            유형 필터를 적용해 5곳씩 거리순으로 표시합니다.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {publicPlaceCategories.map(category => {
+                          const isActive = publicPlaceCategory === category;
+                          const count = category === 'all'
+                            ? sortedPublicPlaces.length
+                            : groupedPublicPlaces[category]?.length || 0;
+                          return (
+                            <button
+                              key={category}
+                              type="button"
+                              onClick={() => setPublicPlaceCategory(category)}
+                              className={`rounded-lg border px-3 py-2 text-xs font-extrabold transition-colors ${
+                                isActive
+                                  ? 'bg-slate-900 border-slate-900 text-white'
+                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              {category === 'all' ? '전체' : category}
+                              <span className={`ml-2 ${isActive ? 'text-white/70' : 'text-slate-400'}`}>{count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+                        <div className="hidden md:grid grid-cols-[120px_1fr_90px] gap-3 bg-slate-50 px-4 py-2 text-[10px] font-extrabold text-slate-400">
+                          <span>유형</span>
+                          <span>기관명 / 주소</span>
+                          <span className="text-right">거리</span>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {visiblePublicPlaces.map((place, idx) => (
+                            <div key={`${place.name}-${idx}`} className="grid grid-cols-1 md:grid-cols-[120px_1fr_90px] gap-2 md:gap-3 px-4 py-3 items-center hover:bg-slate-50/70">
+                              <span className={`w-fit rounded-full px-2 py-1 text-[10px] font-extrabold ${
                                 place.category === '문화시설'
                                   ? 'bg-rose-50 text-rose-600'
                                   : 'bg-indigo-50 text-indigo-600'
                               }`}>
-                                {place.category}
+                                {place.category || '기타 기관'}
                               </span>
-                            )}
-                            <span className="text-[10px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-full mt-1 inline-block">
-                              {place.distance.toLocaleString()}m
-                            </span>
-                          </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-slate-800 truncate">{place.name}</p>
+                                <p className="text-xs text-slate-400 truncate mt-0.5">{place.address}</p>
+                              </div>
+                              <p className="text-xs font-extrabold text-slate-600 md:text-right">
+                                {place.distance.toLocaleString()}m
+                              </p>
+                            </div>
+                          ))}
                         </div>
-                      ))
-                    ) : (
-                      <p className="text-slate-400 text-sm font-semibold text-center py-20">검색된 공공기관/문화시설이 없습니다.</p>
-                    )}
-                  </div>
-                </div>
-                <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-3 mt-3 text-right">
-                  출처: 카카오 Local API (공공기관/문화시설 카테고리 검색)
+                      </div>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <p className="text-[10px] text-slate-400">
+                          {filteredPublicPlaces.length === 0
+                            ? '선택한 유형의 기관이 없습니다.'
+                            : `${filteredPublicPlaces.length}곳 중 ${safePublicPlacePage * 5 + 1}-${Math.min(safePublicPlacePage * 5 + visiblePublicPlaces.length, filteredPublicPlaces.length)} 표시`}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPublicPlacePage(page => Math.max(0, page - 1))}
+                            disabled={publicPlacePage === 0}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                          >
+                            이전
+                          </button>
+                          <span className="text-xs font-extrabold text-slate-500">
+                            {safePublicPlacePage + 1} / {publicPlacePageCount}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setPublicPlacePage(page => Math.min(publicPlacePageCount - 1, page + 1))}
+                            disabled={publicPlacePage >= publicPlacePageCount - 1}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                          >
+                            다음
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 text-sm font-semibold text-center py-10 bg-slate-50 border border-slate-100 rounded-xl">검색된 공공기관/문화시설이 없습니다.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1684,13 +1745,13 @@ function App() {
 
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between" style={{ maxHeight: '350px' }}>
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-4">🎭 주변 문화행사 상세정보 (2km / 자치구 내)</h4>
+                  <h4 className="font-extrabold text-lg text-slate-800 mb-4 flex items-center gap-2"><Theater size={20} className="text-emerald-600" />주변 문화행사 상세정보 (2km / 자치구 내)</h4>
                   <div className="overflow-y-auto space-y-3 pr-2" style={{ maxHeight: '220px' }}>
                     {libraryDataDetail.infrastructure.nearbyEvents && libraryDataDetail.infrastructure.nearbyEvents.length > 0 ? (
                       libraryDataDetail.infrastructure.nearbyEvents.map((e, idx) => (
                         <div key={idx} className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4">
                           <p className="font-bold text-sm text-slate-800">{e.title}</p>
-                          <p className="text-xs text-slate-500 mt-1">📍 장소: {e.place}</p>
+                          <p className="text-xs text-slate-500 mt-1">장소: {e.place}</p>
                           <p className="text-xs text-slate-400 mt-0.5">📅 기간: {e.startDate} ~ {e.endDate}</p>
                           <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full mt-2 inline-block">
                             {typeof e.distance === 'number' ? `도서관에서 ${e.distance.toLocaleString()}m` : e.distance}

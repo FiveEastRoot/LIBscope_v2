@@ -47,7 +47,7 @@ const axios = {
 
 const INSIGHT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1주일
 const INSIGHT_CACHE_FILE = '/tmp/insight-api-cache.json';
-const INSIGHT_CACHE_VERSION = 'v1';
+const INSIGHT_CACHE_VERSION = 'v4';
 const memoryCache = new Map();
 
 function buildCacheKey(type, identifiers = {}) {
@@ -528,7 +528,7 @@ function finalizePopulationSummary(summary) {
   summary.ageDistribution = normalizeFiveYearAgeDistribution(summary.ageDistribution);
   const ageTotal = Object.values(summary.ageDistribution).reduce((sum, value) => sum + Number(value || 0), 0);
   const missingSeniorPopulation = summary.total - ageTotal;
-  if (missingSeniorPopulation > 0 && summary.source === 'SPOP_LOCAL_RESD_DONG') {
+  if (missingSeniorPopulation > 0) {
     summary.ageDistribution['70세 이상'] = (summary.ageDistribution['70세 이상'] || 0) + missingSeniorPopulation;
   }
   summary.missingDongs = [...new Set(summary.missingDongs)];
@@ -570,49 +570,61 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
   }
 
   const today = new Date();
-  const candidateDates = Array.from({ length: 14 }, (_, idx) => {
+  const candidateDates = Array.from({ length: 21 }, (_, idx) => {
     const date = new Date(today);
     date.setDate(today.getDate() - idx);
     return formatYYYYMMDD(date);
   });
+  const targetCodeList = [...targetCodes];
+  const probeCode = targetCodeList[0];
+  const apiName = 'SPOP_LOCAL_RESD_DONG';
+  let availableDate = null;
 
   for (const referenceDate of candidateDates) {
-    const apiName = 'SPOP_LOCAL_RESD_DONG';
     try {
-      const responses = await Promise.all(
-        [...targetCodes].map(code => {
-          const url = `http://openapi.seoul.go.kr:8088/${apiKey}/json/${apiName}/1/1/${referenceDate}/00/${code}`;
-          return axios.get(url, { timeout: 5000 }).catch(() => null);
-        })
-      );
-      const rows = responses.flatMap(response => response ? pickApiRows(apiName, response) : []);
-      if (rows.length === 0) continue;
-
-      const rowsByCode = new Map(rows.map(row => [String(extractDongCodeFromRow(row)), row]));
-      const attemptSummary = createEmptyPopulationSummary();
-      attemptSummary.missingDongs = [...unmappedDongs];
-      let matched = false;
-      dongCodeEntries.forEach(({ dong, code }) => {
-        if (!code) return;
-        const row = rowsByCode.get(String(code));
-        if (!row) {
-          attemptSummary.missingDongs.push(dong);
-          return;
-        }
-        const beforeCount = attemptSummary.matchedDongs.length;
-        rowToPopulationSummary(attemptSummary, row, dong);
-        if (attemptSummary.matchedDongs.length > beforeCount) matched = true;
-      });
-
-      if (matched) {
-        attemptSummary.source = apiName;
-        finalizePopulationSummary(attemptSummary);
-        return attemptSummary;
+      const url = `http://openapi.seoul.go.kr:8088/${apiKey}/json/${apiName}/1/1/${referenceDate}/00/${probeCode}`;
+      const probeResponse = await axios.get(url, { timeout: 1400 }).catch(() => null);
+      const probeRows = probeResponse ? pickApiRows(apiName, probeResponse) : [];
+      if (probeRows.length > 0) {
+        availableDate = referenceDate;
+        break;
       }
     } catch (err) {
       // 후보 API 호출 실패 시 다음 날짜로 전환
     }
     console.warn(`[PopulationAPI] ${referenceDate} 생활인구 API 미스`);
+  }
+
+  if (availableDate) {
+    const responses = await Promise.all(
+      targetCodeList.map(code => {
+        const url = `http://openapi.seoul.go.kr:8088/${apiKey}/json/${apiName}/1/1/${availableDate}/00/${code}`;
+        return axios.get(url, { timeout: 2200 }).catch(() => null);
+      })
+    );
+    const rows = responses.flatMap(response => response ? pickApiRows(apiName, response) : []);
+    const rowsByCode = new Map(rows.map(row => [String(extractDongCodeFromRow(row)), row]));
+    const attemptSummary = createEmptyPopulationSummary();
+    attemptSummary.referenceDate = availableDate;
+    attemptSummary.missingDongs = [...unmappedDongs];
+    let matched = false;
+    dongCodeEntries.forEach(({ dong, code }) => {
+      if (!code) return;
+      const row = rowsByCode.get(String(code));
+      if (!row) {
+        attemptSummary.missingDongs.push(dong);
+        return;
+      }
+      const beforeCount = attemptSummary.matchedDongs.length;
+      rowToPopulationSummary(attemptSummary, row, dong);
+      if (attemptSummary.matchedDongs.length > beforeCount) matched = true;
+    });
+
+    if (matched) {
+      attemptSummary.source = apiName;
+      finalizePopulationSummary(attemptSummary);
+      return attemptSummary;
+    }
   }
 
   summary.source = 'csv_fallback';
@@ -820,12 +832,14 @@ exports.handler = async (event, context) => {
       }
 
       // 1) 자치구 인구 통계: 주민등록인구 기본 + 생활인구 병행 사전 로드
-      const residentPopulation = await withSupabaseFallback(
-        `district resident population ${gu}`,
-        () => supabaseMetrics.fetchDistrictResidentPopulation(gu),
-        () => fetchResidentDistrictPopulationFromCsv(gu)
-      );
-      const livingPopulation = await fetchLivingDistrictPopulation({ apiKey: SEOUL_API_KEY, gu });
+      const [residentPopulation, livingPopulation] = await Promise.all([
+        withSupabaseFallback(
+          `district resident population ${gu}`,
+          () => supabaseMetrics.fetchDistrictResidentPopulation(gu),
+          () => fetchResidentDistrictPopulationFromCsv(gu)
+        ),
+        fetchLivingDistrictPopulation({ apiKey: SEOUL_API_KEY, gu })
+      ]);
       const populationModes = buildPopulationModes({
         resident: residentPopulation,
         living: livingPopulation
@@ -881,6 +895,70 @@ exports.handler = async (event, context) => {
         high: 0,
         university: 0
       };
+      const schoolDetails = {
+        elementary: [],
+        middle: [],
+        high: [],
+        university: []
+      };
+      const normalizeSchoolText = (value) => String(value || '').trim();
+      const normalizeSchoolDetails = (schools = [], category = '학교') => {
+        const unique = new Map();
+        schools.forEach((school) => {
+          const name = normalizeSchoolText(school.name);
+          const address = normalizeSchoolText(school.address);
+          if (!name && !address) return;
+          const key = `${name}|${address}`;
+          if (!unique.has(key)) {
+            unique.set(key, { name, address, category: school.category || category });
+          }
+        });
+        return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      };
+      const fetchKakaoSchoolDetails = async (query, category) => {
+        if (!KAKAO_REST_API_KEY) return [];
+        try {
+          const responses = await Promise.all([1, 2, 3].map(page => axios.get('https://dapi.kakao.com/v2/local/search/keyword.json', {
+              headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` },
+              params: {
+                query: `${gu} ${query}`,
+                size: 15,
+                page,
+                sort: 'accuracy'
+              },
+              timeout: 2200
+            }).catch(err => {
+              console.warn(`[KakaoSchoolAPI] ${gu} ${query} ${page}페이지 검색 실패:`, err.message);
+              return null;
+            })
+          ));
+          const documents = responses.flatMap(res => (
+            res && res.data && Array.isArray(res.data.documents) ? res.data.documents : []
+          ));
+          return normalizeSchoolDetails(
+            documents
+              .map((place) => ({
+                name: place.place_name,
+                address: place.road_address_name || place.address_name,
+                category,
+                sourceCategory: place.category_name || ''
+              }))
+              .filter((school) => {
+                if (!school.name || !school.address || !school.address.includes(gu)) return false;
+                if (category === '대학교') {
+                  const isUniversity = /(대학교$|대학원대학교$|대학교\s|대학원대학교\s|캠퍼스$|KAIST|한국과학기술원)/.test(school.name);
+                  const isNonSchoolFacility = /(병원|장례식장|의료원|클리닉|약국|주차장|연구소|부속|입시|홍보|자료실|센터|콘서트홀|별관|사무소|에듀홀|학습관|임상교육장|의과대학|의과학원|고등학교|중학교|초등학교|카이로스|와플대학|반지대학|SLP)/.test(school.name);
+                  return isUniversity && !isNonSchoolFacility;
+                }
+                return school.name.includes(query);
+              }),
+            category
+          );
+        } catch (err) {
+          console.warn(`[KakaoSchoolAPI] ${gu} ${query} 검색 실패:`, err.message);
+          return [];
+        }
+      };
       let isLiveSchools = false;
       try {
         // 서울시 전체 학교 수는 약 3,960여 개이므로, 1~4000 범위를 1000개 단위로 4번 병렬 호출하여 전체 취합
@@ -892,7 +970,7 @@ exports.handler = async (event, context) => {
         ];
         const promises = ranges.map(range => {
           const url = `http://openapi.seoul.go.kr:8088/${SEOUL_API_KEY}/json/neisSchoolInfo/${range[0]}/${range[1]}/`;
-          return axios.get(url, { timeout: 3500 }).catch(err => {
+          return axios.get(url, { timeout: 1600 }).catch(err => {
             console.warn(`[neisSchoolInfo] 범위 ${range[0]}~${range[1]} 호출 실패:`, err.message);
             return null;
           });
@@ -922,19 +1000,24 @@ exports.handler = async (event, context) => {
             }
           });
 
-          const highSchools = [];
           uniqueSchoolsMap.forEach(r => {
             const scClass = r.SCHUL_KND_SC_NM || '';
+            const school = {
+              name: r.SCHUL_NM || '',
+              address: r.ORG_RDNMA || r.ORG_RDNDA || '',
+              category: scClass || '학교'
+            };
             if (scClass === '초등학교') {
               schoolStats.elementary++;
+              schoolDetails.elementary.push(school);
             } else if (scClass === '중학교') {
               schoolStats.middle++;
+              schoolDetails.middle.push(school);
             } else if (scClass === '고등학교') {
               schoolStats.high++;
-              highSchools.push({ name: r.SCHUL_NM, addr: r.ORG_RDNMA });
+              schoolDetails.high.push(school);
             }
           });
-          console.log(`[SchoolAPI] Matched High Schools in ${gu} (Total: ${schoolStats.high}):`, highSchools.slice(0, 30));
           isLiveSchools = true;
         }
       } catch (err) {
@@ -951,7 +1034,7 @@ exports.handler = async (event, context) => {
       // 대학교(대학/전문대) API 호출 추가
       try {
         const univUrl = `http://openapi.seoul.go.kr:8088/${SEOUL_API_KEY}/json/SebcCollegeInfoKor/1/100/`;
-        const univRes = await axios.get(univUrl, { timeout: 3000 });
+        const univRes = await axios.get(univUrl, { timeout: 1600 });
         if (univRes.data && univRes.data.SebcCollegeInfoKor && univRes.data.SebcCollegeInfoKor.row) {
           const univRows = univRes.data.SebcCollegeInfoKor.row.filter(r => {
             const rowGu = r.H_KOR_GU || '';
@@ -959,6 +1042,11 @@ exports.handler = async (event, context) => {
             return rowGu === gu || rowAddr.includes(gu);
           });
           schoolStats.university = univRows.length;
+          schoolDetails.university = univRows.map(r => ({
+            name: r.H_KOR_NAME || r.SCHUL_NM || r.NAME_KOR || r.NAME || '',
+            address: r.ADD_KOR || r.ADDRESS || '',
+            category: '대학교'
+          })).filter(school => school.name || school.address);
           console.log(`[SchoolAPI] SebcCollegeInfoKor 실시간 대학교 수 (${gu}):`, schoolStats.university);
         }
       } catch (err) {
@@ -972,6 +1060,29 @@ exports.handler = async (event, context) => {
         };
         schoolStats.university = univFallback[gu] || 0;
       }
+
+      const schoolDetailFallbacks = await Promise.all([
+        schoolDetails.elementary.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('초등학교', '초등학교'),
+        schoolDetails.middle.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('중학교', '중학교'),
+        schoolDetails.high.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('고등학교', '고등학교'),
+        schoolDetails.university.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('대학교', '대학교')
+      ]);
+      const schoolKeys = ['elementary', 'middle', 'high', 'university'];
+      schoolKeys.forEach((key, index) => {
+        if (schoolDetails[key].length === 0 && schoolDetailFallbacks[index].length > 0) {
+          schoolDetails[key] = schoolDetailFallbacks[index];
+        } else {
+          schoolDetails[key] = normalizeSchoolDetails(schoolDetails[key], {
+            elementary: '초등학교',
+            middle: '중학교',
+            high: '고등학교',
+            university: '대학교'
+          }[key]);
+        }
+        if (schoolDetails[key].length > schoolStats[key]) {
+          schoolStats[key] = schoolDetails[key].length;
+        }
+      });
       console.log(`[SchoolAPI] 최종 교육기관 통계 (${gu}):`, schoolStats);
 
       // 4) 실시간 공공도서관 현황 API 연동 (SeoulPublicLibraryInfo) 및 자치구 도서관 수 집계
@@ -1015,16 +1126,18 @@ exports.handler = async (event, context) => {
       }
 
       // 최종 자치구 분석 데이터 반환
-      const supabaseWelfare = await withSupabaseFallback(
-        `district welfare ${gu}`,
-        () => supabaseMetrics.fetchDistrictWelfare(gu),
-        () => null
-      );
-      const supabaseSocialIndicators = await withSupabaseFallback(
-        `district social safety composition ${gu}`,
-        () => supabaseMetrics.fetchDistrictSocialIndicators(gu),
-        () => null
-      );
+      const [supabaseWelfare, supabaseSocialIndicators] = await Promise.all([
+        withSupabaseFallback(
+          `district welfare ${gu}`,
+          () => supabaseMetrics.fetchDistrictWelfare(gu),
+          () => null
+        ),
+        withSupabaseFallback(
+          `district social safety composition ${gu}`,
+          () => supabaseMetrics.fetchDistrictSocialIndicators(gu),
+          () => null
+        )
+      ]);
 
       const responseData = {
         gu,
@@ -1060,6 +1173,7 @@ exports.handler = async (event, context) => {
         },
         cultureAndEducation: {
           schools: schoolStats,
+          schoolDetails,
           publicLibraryCount,
           liveCultureEventsMonth: cultureEventsCount
         }

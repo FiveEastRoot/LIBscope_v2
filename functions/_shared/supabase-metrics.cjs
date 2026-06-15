@@ -1,9 +1,24 @@
-const DEFAULT_TIMEOUT_MS = 10000;
+const DEFAULT_TIMEOUT_MS = 3500;
 
 function getSupabaseConfig() {
   const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
   return { url, key, enabled: Boolean(url && key) };
+}
+
+function buildSupabaseHeaders(key, extra = {}) {
+  const headers = {
+    apikey: key,
+    Accept: 'application/json',
+    'User-Agent': 'libscope-netlify-function/1.0',
+    ...extra
+  };
+
+  if (!String(key).startsWith('sb_secret_')) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+
+  return headers;
 }
 
 function buildQuery(params = {}) {
@@ -26,11 +41,7 @@ async function supabaseFetch(table, params = {}) {
 
   try {
     const response = await fetch(`${config.url}/rest/v1/${table}${query ? `?${query}` : ''}`, {
-      headers: {
-        apikey: config.key,
-        Authorization: `Bearer ${config.key}`,
-        Accept: 'application/json'
-      },
+      headers: buildSupabaseHeaders(config.key),
       signal: controller.signal
     });
 
@@ -143,7 +154,7 @@ function rowsToPopulationSummary(rows, source) {
   summary.ageDistribution = normalizeFiveYearAgeDistribution(summary.ageDistribution);
   const ageTotal = Object.values(summary.ageDistribution).reduce((sum, value) => sum + Number(value || 0), 0);
   const missingSeniorPopulation = summary.total - ageTotal;
-  if (missingSeniorPopulation > 0 && summary.source === 'SPOP_LOCAL_RESD_DONG') {
+  if (missingSeniorPopulation > 0) {
     summary.ageDistribution['70세 이상'] = (summary.ageDistribution['70세 이상'] || 0) + missingSeniorPopulation;
   }
 
