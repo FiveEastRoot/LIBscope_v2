@@ -225,7 +225,7 @@ function App() {
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error('카카오 지도 SDK 로딩 에러:', err);
+        console.warn('카카오 지도 SDK 로딩 경고:', err);
         setMapError('카카오 지도 SDK 로드에 실패했습니다. 키 유효성 및 도메인 설정을 확인하세요.');
       });
 
