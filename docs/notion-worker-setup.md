@@ -23,20 +23,44 @@ npm run build
 ntn doctor
 ```
 
-`npm run check` and `npm run build` pass. `ntn doctor` currently authenticates the Public API but reports no Workers access.
+`npm run check` and `npm run build` pass. `ntn doctor` authenticates the Public API but reports no Workers access on the current Notion Free workspace.
 
-## Current blocker
+## Current decision
 
-Deploy is blocked by the workspace-level Notion Workers gate:
+Deploy is blocked because the current `LIBbox-v2` Notion workspace is on the Free plan. Notion Workers requires a workspace plan/access level that exposes Workers. The quickstart scaffold is kept in the repository so it can be reused if the workspace is upgraded later, but Workers is not the active automation path for LIBscope v2 right now.
+
+Observed CLI error:
 
 ```text
 403 Forbidden WorkersCapabilityMissing
 This token does not have the ability to manage Workers.
 ```
 
-The workspace owner must enable Notion Workers and accept the Workers terms for the `LIBbox-v2` workspace before deployment can proceed.
+This is a plan/access gate, not a local CLI or code issue.
 
-## Retry after Workers access is enabled
+## Active replacement path
+
+Until the Notion workspace is upgraded, use the existing Netlify/Supabase/GitHub Actions path for automation:
+
+```text
+Scheduled API/data refresh
+  -> GitHub Actions or Netlify scheduled/background function
+  -> Supabase data/cache read
+  -> first-pass insight/report generation
+  -> evaluator feedback generation
+  -> prompt improvement and previous prompt archival
+  -> Supabase persistence
+  -> Notion API documentation/log update
+```
+
+Recommended ownership:
+
+- Supabase: source snapshots, generated artifacts, feedback records, prompt versions, prompt archives.
+- Netlify Functions: app-facing read/write endpoints, LLM calls, cache-aware generation, manual regeneration triggers.
+- GitHub Actions: low-frequency scheduled jobs such as weekly API refresh and prompt improvement loops.
+- Notion API: planning docs, status summaries, human-readable operation logs.
+
+## Retry only after upgrading Notion
 
 Run from `notion-worker/`:
 
@@ -47,7 +71,7 @@ ntn workers deploy --name LIBscope-v2-worker
 ntn workers exec sayHello -d '{"name":"World"}'
 ```
 
-If `ntn doctor` still shows `Workers access ! no Workers access`, the workspace gate has not been cleared yet.
+If `ntn doctor` still shows `Workers access ! no Workers access`, the workspace still does not expose Workers.
 
 ## Chrome note
 
