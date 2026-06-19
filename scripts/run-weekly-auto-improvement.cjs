@@ -88,6 +88,10 @@ async function draftPromptImprovements() {
     console.log('Skipping prompt improvement drafts.');
     return;
   }
+  if (DRY_RUN && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
+    console.log('Skipping prompt improvement drafts in dry-run because Supabase credentials are not available.');
+    return;
+  }
 
   for (const artifactType of ARTIFACT_TYPES) {
     const sectionKey = SECTION_BY_ARTIFACT[artifactType] || artifactType;
