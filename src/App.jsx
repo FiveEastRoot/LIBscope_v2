@@ -132,6 +132,7 @@ function App() {
   const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
   const [llmProviderMode, setLlmProviderMode] = useState('cache');
   const [llmRefreshNonce, setLlmRefreshNonce] = useState(0);
+  const [regeneratingSection, setRegeneratingSection] = useState(null);
 
   // 지도 인스턴스 참조
   const mapContainerRef = useRef(null);
@@ -506,6 +507,31 @@ function App() {
       escalationModel: 'gpt-5.4 또는 claude-sonnet-4-6'
     }
   ).slice(0, 3);
+
+  const regenerateInterpretationSection = (sectionKey) => {
+    if (!districtData || regeneratingSection) return;
+    setRegeneratingSection(sectionKey);
+    setLlmError(null);
+
+    axios.post('/api/llm-harness', {
+      type: 'district_screen',
+      provider: 'direct-openai',
+      forceGenerate: true,
+      regenerateSections: [sectionKey],
+      districtData,
+      cultureMetrics: selectedCultureMetrics || {}
+    })
+      .then((res) => {
+        setLlmHarness(res.data);
+      })
+      .catch((err) => {
+        console.error(err);
+        setLlmError('선택 섹션 AI 재생성에 실패했습니다. API 키와 함수 로그를 확인해 주세요.');
+      })
+      .finally(() => {
+        setRegeneratingSection(null);
+      });
+  };
 
   useEffect(() => {
     if (activeTab !== 'district' || !districtData) {
@@ -975,6 +1001,8 @@ function App() {
               variant="strip"
               pendingTitle="인구구조 해석"
               staleSnapshot={isSectionSnapshotStale('population')}
+              onRegenerate={() => regenerateInterpretationSection('population')}
+              regenerating={regeneratingSection === 'population'}
             />
 
             {/* 문화 역량·향유 지표 섹션 */}
@@ -1145,6 +1173,8 @@ function App() {
                     variant="strip"
                     pendingTitle="문화 역량·향유 해석"
                     staleSnapshot={isSectionSnapshotStale('culture')}
+                    onRegenerate={() => regenerateInterpretationSection('culture')}
+                    regenerating={regeneratingSection === 'culture'}
                   />
                 </div>
               </div>
@@ -1253,6 +1283,8 @@ function App() {
                       variant="strip"
                       pendingTitle="교육 인프라 해석"
                       staleSnapshot={isSectionSnapshotStale('education')}
+                      onRegenerate={() => regenerateInterpretationSection('education')}
+                      regenerating={regeneratingSection === 'education'}
                     />
                   </div>
                 </div>
@@ -1281,6 +1313,8 @@ function App() {
                     pendingTitle="사회안전망 종합 해석"
                     pendingMessage="가구·장애·외국인 구성 해석이 생성되면 이 영역에 종합 판단이 표시됩니다."
                     staleSnapshot={isSectionSnapshotStale('socialSafety')}
+                    onRegenerate={() => regenerateInterpretationSection('socialSafety')}
+                    regenerating={regeneratingSection === 'socialSafety'}
                   />
                 </div>
 
@@ -1447,6 +1481,8 @@ function App() {
                     pendingTitle={`${activeSocialSafetySection.label} 해석`}
                     pendingMessage="선택한 대상자 구성에 대한 인사이트가 생성되면 이 영역에 표시됩니다."
                     staleSnapshot={isSectionSnapshotStale('socialSafety')}
+                    onRegenerate={() => regenerateInterpretationSection('socialSafety')}
+                    regenerating={regeneratingSection === 'socialSafety'}
                   />
                 </div>
               </section>

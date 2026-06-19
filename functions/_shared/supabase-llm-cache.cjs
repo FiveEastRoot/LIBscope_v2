@@ -515,13 +515,15 @@ async function saveCachedSectionInterpretations({
   modelRegistryVersion,
   aiMeta = {},
   qualityStatus = 'pending',
-  qualityErrors = []
+  qualityErrors = [],
+  sectionKeys = SECTION_CACHE_KEYS
 }) {
   const guName = districtData.gu || cultureMetrics.gu || payload?.insight?.title || '선택 자치구';
   const generatedAt = new Date().toISOString();
   const results = [];
+  const targetSectionKeys = SECTION_CACHE_KEYS.filter(sectionKey => sectionKeys.includes(sectionKey));
 
-  for (const sectionKey of SECTION_CACHE_KEYS) {
+  for (const sectionKey of targetSectionKeys) {
     const packet = payload.interpretations?.[sectionKey];
     if (!packet) continue;
     const row = {
@@ -579,7 +581,7 @@ async function saveCachedSectionInterpretations({
   const savedKeys = results.filter(item => item.saved).map(item => item.sectionKey);
   return {
     saved: savedKeys.length > 0,
-    complete: SECTION_CACHE_KEYS.every(sectionKey => savedKeys.includes(sectionKey)),
+    complete: targetSectionKeys.every(sectionKey => savedKeys.includes(sectionKey)),
     sectionKeys: savedKeys,
     results
   };

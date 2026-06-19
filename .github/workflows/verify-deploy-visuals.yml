@@ -15,6 +15,7 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       VISUAL_VERIFY_URL: ${{ secrets.VISUAL_VERIFY_URL || 'https://libscope2.netlify.app/' }}
+      VISUAL_VERIFY_REPORT_PATH: visual-verify/report.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,3 +36,11 @@ jobs:
 
       - name: Verify production population visuals
         run: npm run verify:deploy-visuals
+
+      - name: Upload visual verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-verification-report
+          path: visual-verify/report.json
+          if-no-files-found: ignore

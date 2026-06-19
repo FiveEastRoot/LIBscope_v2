@@ -99,7 +99,9 @@ function MetricInterpretationPanel({
   variant = 'panel',
   pendingTitle = '지표 해석',
   pendingMessage = '인사이트 생성 후 이 영역에 해석 결과가 표시됩니다.',
-  staleSnapshot = false
+  staleSnapshot = false,
+  onRegenerate = null,
+  regenerating = false
 }) {
   const theme = interpretationToneClasses[tone] || interpretationToneClasses.blue;
   const isStrip = variant === 'strip';
@@ -189,6 +191,16 @@ function MetricInterpretationPanel({
                 ))}
               </div>
             )}
+            {staleSnapshot && onRegenerate && (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                disabled={regenerating}
+                className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {regenerating ? '재생성 중...' : '이 섹션 재생성'}
+              </button>
+            )}
           </div>
 
           <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-3">
@@ -269,6 +281,16 @@ function MetricInterpretationPanel({
               </span>
             ))}
           </div>
+        )}
+        {staleSnapshot && onRegenerate && (
+          <button
+            type="button"
+            onClick={onRegenerate}
+            disabled={regenerating}
+            className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-black text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {regenerating ? '재생성 중...' : '이 섹션 재생성'}
+          </button>
         )}
       </div>
 

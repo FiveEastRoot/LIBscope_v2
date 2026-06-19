@@ -252,6 +252,12 @@ async function run() {
       screenshotPath
     };
 
+    if (process.env.VISUAL_VERIFY_REPORT_PATH) {
+      const reportPath = path.resolve(process.env.VISUAL_VERIFY_REPORT_PATH);
+      fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf-8');
+    }
+
     console.log(JSON.stringify(report, null, 2));
     if (failures.length > 0) {
       console.error(failures.join('\n'));
