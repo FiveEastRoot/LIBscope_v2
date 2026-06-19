@@ -45,7 +45,7 @@ jobs:
       DIRECT_OPENAI_API_KEY: ${{ secrets.DIRECT_OPENAI_API_KEY }}
       DIRECT_ANTHROPIC_API_KEY: ${{ secrets.DIRECT_ANTHROPIC_API_KEY }}
       DIRECT_GEMINI_API_KEY: ${{ secrets.DIRECT_GEMINI_API_KEY }}
-      AUTO_IMPROVE_FEEDBACK_PROVIDER: ${{ vars.AUTO_IMPROVE_FEEDBACK_PROVIDER || 'anthropic' }}
+      AUTO_IMPROVE_FEEDBACK_PROVIDER: ${{ vars.AUTO_IMPROVE_FEEDBACK_PROVIDER || '' }}
       AUTO_IMPROVE_FEEDBACK_MODEL: ${{ vars.AUTO_IMPROVE_FEEDBACK_MODEL || '' }}
       AUTO_IMPROVE_DISTRICTS: ${{ github.event.inputs.districts || vars.AUTO_IMPROVE_DISTRICTS || '강남구,노원구,은평구,영등포구,종로구' }}
       AUTO_IMPROVE_ARTIFACT_TYPES: ${{ github.event.inputs.artifact_types || vars.AUTO_IMPROVE_ARTIFACT_TYPES || 'districtInsight,population,culture,education,socialSafety,reportBody' }}

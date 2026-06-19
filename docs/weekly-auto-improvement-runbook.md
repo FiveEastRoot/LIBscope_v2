@@ -50,6 +50,12 @@ Configure these in:
 - `AUTO_IMPROVE_FEEDBACK_PROVIDER`
 - `AUTO_IMPROVE_FEEDBACK_MODEL`
 
+If `AUTO_IMPROVE_FEEDBACK_PROVIDER` is not set, the scripts choose the first available direct model key in this order:
+
+1. Anthropic
+2. OpenAI
+3. Gemini
+
 Default bounded targets:
 
 ```text
