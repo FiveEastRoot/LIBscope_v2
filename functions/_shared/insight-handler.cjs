@@ -739,6 +739,7 @@ exports.handler = async (event, context) => {
   const forceRefresh = queryParams.forceRefresh === '1';
   const includeCacheMeta = queryParams.includeCacheMeta === '1';
   const cacheVersion = queryParams.cacheVersion || 'default';
+  const populationCacheBucket = queryParams.populationCacheBucket || formatYYYYMMDD(new Date());
   const nowIso = new Date().toISOString();
 
   const headers = {
@@ -812,7 +813,7 @@ exports.handler = async (event, context) => {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'gu 파라미터가 필요합니다.' }) };
       }
 
-      const cacheKey = buildCacheKey('district', { version: cacheVersion, gu, source: 'district' });
+      const cacheKey = buildCacheKey('district', { version: cacheVersion, gu, source: 'district', populationCacheBucket });
       const cached = !forceRefresh ? getCachedResponse(cacheKey) : null;
       if (cached) {
         if (includeCacheMeta) {
@@ -1207,7 +1208,7 @@ exports.handler = async (event, context) => {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'gu 및 library 파라미터가 필요합니다.' }) };
       }
 
-      const cacheKey = buildCacheKey('library', { version: cacheVersion, gu, library });
+      const cacheKey = buildCacheKey('library', { version: cacheVersion, gu, library, populationCacheBucket });
       const cached = !forceRefresh ? getCachedResponse(cacheKey) : null;
       if (cached) {
         if (includeCacheMeta) {

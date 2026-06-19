@@ -100,6 +100,27 @@ function buildDistrictInsightFilters({
   };
 }
 
+function buildLatestDistrictInsightFilters({
+  guName,
+  harnessVersion,
+  promptVersion,
+  modelRegistryVersion
+}) {
+  return {
+    select: 'id,output_payload,provider,model_name,generated_at,valid_until,quality_status,quality_errors,source_snapshot_key',
+    gu_name: `eq.${guName}`,
+    section_key: 'eq.districtInsight',
+    generation_unit: 'eq.district_screen',
+    harness_version: `eq.${harnessVersion}`,
+    prompt_version: `eq.${promptVersion}`,
+    model_registry_version: `eq.${modelRegistryVersion}`,
+    library_id: 'is.null',
+    archived_at: 'is.null',
+    order: 'generated_at.desc',
+    limit: '1'
+  };
+}
+
 const SECTION_CACHE_KEYS = ['population', 'culture', 'education', 'socialSafety'];
 
 function buildSectionFilters({
@@ -116,6 +137,27 @@ function buildSectionFilters({
     section_key: sectionKey ? `eq.${sectionKey}` : undefined,
     generation_unit: 'eq.metric_interpretation',
     source_snapshot_key: `eq.${sourceSnapshotKey}`,
+    harness_version: `eq.${harnessVersion}`,
+    prompt_version: `eq.${promptVersion}`,
+    model_registry_version: `eq.${modelRegistryVersion}`,
+    library_id: 'is.null',
+    archived_at: 'is.null',
+    order: 'generated_at.desc'
+  };
+}
+
+function buildLatestSectionFilters({
+  guName,
+  sectionKey,
+  harnessVersion,
+  promptVersion,
+  modelRegistryVersion
+}) {
+  return {
+    select: 'id,section_key,output_payload,provider,model_name,generated_at,valid_until,quality_status,quality_errors,source_snapshot_key',
+    gu_name: `eq.${guName}`,
+    section_key: sectionKey ? `eq.${sectionKey}` : undefined,
+    generation_unit: 'eq.metric_interpretation',
     harness_version: `eq.${harnessVersion}`,
     prompt_version: `eq.${promptVersion}`,
     model_registry_version: `eq.${modelRegistryVersion}`,
@@ -174,29 +216,57 @@ async function fetchCachedDistrictInsight(params) {
   }
 
   const row = Array.isArray(result.data) ? result.data[0] : null;
-  if (!row?.output_payload) {
+  if (row?.output_payload) {
     return {
-      hit: false,
+      hit: true,
       available: true,
-      reason: 'cache_miss'
+      row,
+      payload: withCacheStatus(row.output_payload, {
+        hit: true,
+        available: true,
+        canGenerate: false,
+        reason: 'snapshot_cache_hit',
+        generatedAt: row.generated_at,
+        validUntil: row.valid_until,
+        qualityStatus: row.quality_status,
+        provider: row.provider,
+        model: row.model_name
+      })
     };
   }
 
+  const latestFilters = buildLatestDistrictInsightFilters(params);
+  const latestResult = await supabaseRequest(`llm_section_outputs?${buildQuery(latestFilters)}`);
+  if (latestResult.ok) {
+    const latestRow = Array.isArray(latestResult.data) ? latestResult.data[0] : null;
+    if (latestRow?.output_payload) {
+      return {
+        hit: true,
+        available: true,
+        staleSnapshot: true,
+        row: latestRow,
+        payload: withCacheStatus(latestRow.output_payload, {
+          hit: true,
+          available: true,
+          canGenerate: false,
+          reason: 'latest_gu_cache_hit_snapshot_mismatch',
+          requestedSnapshotKey: params.sourceSnapshotKey,
+          cachedSnapshotKey: latestRow.source_snapshot_key,
+          generatedAt: latestRow.generated_at,
+          validUntil: latestRow.valid_until,
+          qualityStatus: latestRow.quality_status,
+          provider: latestRow.provider,
+          model: latestRow.model_name
+        })
+      };
+    }
+  }
+
   return {
-    hit: true,
+    hit: false,
     available: true,
-    row,
-    payload: withCacheStatus(row.output_payload, {
-      hit: true,
-      available: true,
-      canGenerate: false,
-      reason: 'snapshot_cache_hit',
-      generatedAt: row.generated_at,
-      validUntil: row.valid_until,
-      qualityStatus: row.quality_status,
-      provider: row.provider,
-      model: row.model_name
-    })
+    reason: latestResult.ok ? 'cache_miss' : 'cache_latest_read_failed',
+    error: latestResult.ok ? null : latestResult.error
   };
 }
 
@@ -216,8 +286,18 @@ async function fetchCachedSectionInterpretations(params) {
   }
 
   const rows = Array.isArray(result.data) ? result.data : [];
+  const exactRows = rows;
+  let fallbackRows = [];
+  if (exactRows.length === 0) {
+    const latestFilters = buildLatestSectionFilters(params);
+    const latestResult = await supabaseRequest(`llm_section_outputs?${buildQuery(latestFilters)}`);
+    if (latestResult.ok) {
+      fallbackRows = Array.isArray(latestResult.data) ? latestResult.data : [];
+    }
+  }
+  const sourceRows = exactRows.length > 0 ? exactRows : fallbackRows;
   const latestBySection = new Map();
-  rows.forEach((row) => {
+  sourceRows.forEach((row) => {
     if (!row?.section_key || !row?.output_payload) return;
     if (!latestBySection.has(row.section_key)) {
       latestBySection.set(row.section_key, row);
@@ -240,7 +320,11 @@ async function fetchCachedSectionInterpretations(params) {
     hit: sectionKeys.length > 0,
     complete: SECTION_CACHE_KEYS.every(sectionKey => sectionKeys.includes(sectionKey)),
     available: true,
-    reason: sectionKeys.length > 0 ? 'section_cache_hit' : 'section_cache_miss',
+    staleSnapshot: exactRows.length === 0 && fallbackRows.length > 0,
+    reason: sectionKeys.length > 0
+      ? (exactRows.length > 0 ? 'section_cache_hit' : 'latest_section_cache_hit_snapshot_mismatch')
+      : 'section_cache_miss',
+    requestedSnapshotKey: params.sourceSnapshotKey,
     sectionKeys,
     generatedAtBySection,
     qualityBySection,

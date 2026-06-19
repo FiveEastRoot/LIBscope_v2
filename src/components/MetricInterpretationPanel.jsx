@@ -98,7 +98,8 @@ function MetricInterpretationPanel({
   className = '',
   variant = 'panel',
   pendingTitle = '지표 해석',
-  pendingMessage = '인사이트 생성 후 이 영역에 해석 결과가 표시됩니다.'
+  pendingMessage = '인사이트 생성 후 이 영역에 해석 결과가 표시됩니다.',
+  staleSnapshot = false
 }) {
   const theme = interpretationToneClasses[tone] || interpretationToneClasses.blue;
   const isStrip = variant === 'strip';
@@ -168,6 +169,11 @@ function MetricInterpretationPanel({
                   <Sparkles size={10} />
                   AI 해석
                 </span>
+                {staleSnapshot && (
+                  <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black tracking-[0.1em] text-amber-700">
+                    이전 생성본
+                  </span>
+                )}
                 <span className={`text-[11px] font-black ${theme.label}`}>{packet.title}</span>
               </div>
               <p className="mt-1.5 text-xs font-extrabold leading-relaxed text-slate-800 sm:text-[13px]">
@@ -242,6 +248,11 @@ function MetricInterpretationPanel({
                 <Sparkles size={10} />
                 AI 작성
               </span>
+              {staleSnapshot && (
+                <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black tracking-[0.1em] text-amber-700">
+                  이전 생성본
+                </span>
+              )}
               <span className={`text-[11px] font-extrabold ${theme.label}`}>{packet.title}</span>
             </div>
             <div className="mt-1 rounded-xl border border-white/80 bg-white/70 px-2.5 py-2 shadow-sm">

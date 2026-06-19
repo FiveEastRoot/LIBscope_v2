@@ -1,6 +1,6 @@
 function PopulationModeToggle({ populationMode, onChange }) {
   return (
-    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1">
+    <div className="relative z-10 flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-100 p-1">
       {[
         { key: 'resident', label: '주민등록' },
         { key: 'living', label: '생활인구' }

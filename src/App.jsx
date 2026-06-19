@@ -440,6 +440,9 @@ function App() {
   const sectionCacheHit = Boolean(sectionCacheStatus?.hit);
   const insightCacheUnavailable = insightCacheStatus?.available === false;
   const insightCanGenerate = Boolean(insightCacheStatus?.canGenerate);
+  const insightSnapshotStale = insightCacheStatus?.reason === 'latest_gu_cache_hit_snapshot_mismatch';
+  const sectionSnapshotStale = Boolean(sectionCacheStatus?.staleSnapshot)
+    || sectionCacheStatus?.reason === 'latest_section_cache_hit_snapshot_mismatch';
   const insightGeneratedAtLabel = formatInsightGeneratedAt(insightCacheStatus?.generatedAt);
     const normalizeInsightCardLabel = (label) => label === '검토 방향' ? '실행 방향' : label;
     const insightCards = insightCacheHit && Array.isArray(llmHarness?.insight?.cards)
@@ -482,7 +485,7 @@ function App() {
         : llmHarness.fallbackReason
           ? ' · 생성 실패 후 미리보기 표시'
           : ''
-    }${insightCacheHit ? ` · DB 저장본 · ${insightGeneratedAtLabel}` : insightCacheStatus?.reason === 'cache_miss' ? ' · 저장된 인사이트 없음' : insightCacheUnavailable ? ' · 캐시 연결 대기' : ''}`
+    }${insightCacheHit ? ` · ${insightSnapshotStale ? '이전 생성본' : 'DB 저장본'} · ${insightGeneratedAtLabel}` : insightCacheStatus?.reason === 'cache_miss' ? ' · 저장된 인사이트 없음' : insightCacheUnavailable ? ' · 캐시 연결 대기' : ''}`
     : 'AI 인사이트 대기';
   const generatedInterpretations = (insightCacheHit || sectionCacheHit) ? llmHarness?.interpretations : null;
   const socialSafetyAiInsight = generatedInterpretations?.socialSafety;
@@ -710,9 +713,13 @@ function App() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {insightCacheHit ? (
-                      <div className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm">
+                      <div className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-extrabold shadow-sm ${
+                        insightSnapshotStale
+                          ? 'border-amber-200 bg-amber-50 text-amber-800'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      }`}>
                         <Calendar size={14} />
-                        인사이트 생성일 {insightGeneratedAtLabel}
+                        {insightSnapshotStale ? '이전 생성본' : '인사이트 생성일'} {insightGeneratedAtLabel}
                       </div>
                     ) : insightCanGenerate ? (
                       <button
@@ -782,6 +789,12 @@ function App() {
               {insightCacheUnavailable && (
                 <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
                   DB 캐시 테이블이 아직 연결되지 않아 생성 결과가 재사용되지 않을 수 있습니다. Supabase LLM 캐시 스키마 적용 후 자동 저장됩니다.
+                </div>
+              )}
+
+              {(insightSnapshotStale || sectionSnapshotStale) && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-800">
+                  현재 지표 스냅샷과 정확히 일치하는 AI 생성본이 없어 가장 최근 생성본을 표시 중입니다. 화면의 지표 값과 AI 문장의 일부 수치가 다를 수 있습니다.
                 </div>
               )}
 
@@ -958,6 +971,7 @@ function App() {
               className="order-[40]"
               variant="strip"
               pendingTitle="인구구조 해석"
+              staleSnapshot={sectionSnapshotStale}
             />
 
             {/* 문화 역량·향유 지표 섹션 */}
@@ -1127,6 +1141,7 @@ function App() {
                     error={llmError}
                     variant="strip"
                     pendingTitle="문화 역량·향유 해석"
+                    staleSnapshot={sectionSnapshotStale}
                   />
                 </div>
               </div>
@@ -1234,6 +1249,7 @@ function App() {
                       error={llmError}
                       variant="strip"
                       pendingTitle="교육 인프라 해석"
+                      staleSnapshot={sectionSnapshotStale}
                     />
                   </div>
                 </div>
@@ -1261,6 +1277,7 @@ function App() {
                     variant="strip"
                     pendingTitle="사회안전망 종합 해석"
                     pendingMessage="가구·장애·외국인 구성 해석이 생성되면 이 영역에 종합 판단이 표시됩니다."
+                    staleSnapshot={sectionSnapshotStale}
                   />
                 </div>
 
@@ -1426,6 +1443,7 @@ function App() {
                     variant="strip"
                     pendingTitle={`${activeSocialSafetySection.label} 해석`}
                     pendingMessage="선택한 대상자 구성에 대한 인사이트가 생성되면 이 영역에 표시됩니다."
+                    staleSnapshot={sectionSnapshotStale}
                   />
                 </div>
               </section>
