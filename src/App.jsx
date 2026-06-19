@@ -443,6 +443,9 @@ function App() {
   const insightSnapshotStale = insightCacheStatus?.reason === 'latest_gu_cache_hit_snapshot_mismatch';
   const sectionSnapshotStale = Boolean(sectionCacheStatus?.staleSnapshot)
     || sectionCacheStatus?.reason === 'latest_section_cache_hit_snapshot_mismatch';
+  const isSectionSnapshotStale = (sectionKey) => Boolean(sectionCacheStatus?.staleBySection?.[sectionKey])
+    || Boolean(sectionCacheStatus?.staleSectionKeys?.includes?.(sectionKey))
+    || (sectionSnapshotStale && !sectionCacheStatus?.staleBySection);
   const insightGeneratedAtLabel = formatInsightGeneratedAt(insightCacheStatus?.generatedAt);
     const normalizeInsightCardLabel = (label) => label === '검토 방향' ? '실행 방향' : label;
     const insightCards = insightCacheHit && Array.isArray(llmHarness?.insight?.cards)
@@ -971,7 +974,7 @@ function App() {
               className="order-[40]"
               variant="strip"
               pendingTitle="인구구조 해석"
-              staleSnapshot={sectionSnapshotStale}
+              staleSnapshot={isSectionSnapshotStale('population')}
             />
 
             {/* 문화 역량·향유 지표 섹션 */}
@@ -1141,7 +1144,7 @@ function App() {
                     error={llmError}
                     variant="strip"
                     pendingTitle="문화 역량·향유 해석"
-                    staleSnapshot={sectionSnapshotStale}
+                    staleSnapshot={isSectionSnapshotStale('culture')}
                   />
                 </div>
               </div>
@@ -1249,7 +1252,7 @@ function App() {
                       error={llmError}
                       variant="strip"
                       pendingTitle="교육 인프라 해석"
-                      staleSnapshot={sectionSnapshotStale}
+                      staleSnapshot={isSectionSnapshotStale('education')}
                     />
                   </div>
                 </div>
@@ -1277,7 +1280,7 @@ function App() {
                     variant="strip"
                     pendingTitle="사회안전망 종합 해석"
                     pendingMessage="가구·장애·외국인 구성 해석이 생성되면 이 영역에 종합 판단이 표시됩니다."
-                    staleSnapshot={sectionSnapshotStale}
+                    staleSnapshot={isSectionSnapshotStale('socialSafety')}
                   />
                 </div>
 
@@ -1443,7 +1446,7 @@ function App() {
                     variant="strip"
                     pendingTitle={`${activeSocialSafetySection.label} 해석`}
                     pendingMessage="선택한 대상자 구성에 대한 인사이트가 생성되면 이 영역에 표시됩니다."
-                    staleSnapshot={sectionSnapshotStale}
+                    staleSnapshot={isSectionSnapshotStale('socialSafety')}
                   />
                 </div>
               </section>

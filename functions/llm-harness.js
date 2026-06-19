@@ -178,6 +178,9 @@ export default async function llmHarness(request) {
         available: sectionCacheLookup.available,
         reason: sectionCacheLookup.reason,
         sectionKeys: sectionCacheLookup.sectionKeys || [],
+        staleSectionKeys: sectionCacheLookup.staleSectionKeys || [],
+        staleBySection: sectionCacheLookup.staleBySection || {},
+        snapshotKeyBySection: sectionCacheLookup.snapshotKeyBySection || {},
         generatedAtBySection: sectionCacheLookup.generatedAtBySection || {},
         qualityBySection: sectionCacheLookup.qualityBySection || {}
       }));
@@ -197,6 +200,9 @@ export default async function llmHarness(request) {
         available: sectionCacheLookup.available,
         reason: sectionCacheLookup.reason,
         sectionKeys: sectionCacheLookup.sectionKeys || [],
+        staleSectionKeys: sectionCacheLookup.staleSectionKeys || [],
+        staleBySection: sectionCacheLookup.staleBySection || {},
+        snapshotKeyBySection: sectionCacheLookup.snapshotKeyBySection || {},
         generatedAtBySection: sectionCacheLookup.generatedAtBySection || {},
         qualityBySection: sectionCacheLookup.qualityBySection || {},
         canGenerate: Boolean(sectionCacheLookup.available)
@@ -304,6 +310,9 @@ export default async function llmHarness(request) {
           available: sectionCacheLookup.available,
           reason: sectionCacheLookup.reason,
           sectionKeys: sectionCacheLookup.sectionKeys || [],
+          staleSectionKeys: sectionCacheLookup.staleSectionKeys || [],
+          staleBySection: sectionCacheLookup.staleBySection || {},
+          snapshotKeyBySection: sectionCacheLookup.snapshotKeyBySection || {},
           generatedAtBySection: sectionCacheLookup.generatedAtBySection || {},
           qualityBySection: sectionCacheLookup.qualityBySection || {}
         }),

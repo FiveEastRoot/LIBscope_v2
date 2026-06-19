@@ -287,15 +287,18 @@ async function fetchCachedSectionInterpretations(params) {
 
   const rows = Array.isArray(result.data) ? result.data : [];
   const exactRows = rows;
+  const exactSectionKeys = new Set(exactRows.map(row => row?.section_key).filter(Boolean));
+  const missingSectionKeys = SECTION_CACHE_KEYS.filter(sectionKey => !exactSectionKeys.has(sectionKey));
   let fallbackRows = [];
-  if (exactRows.length === 0) {
+  if (missingSectionKeys.length > 0) {
     const latestFilters = buildLatestSectionFilters(params);
     const latestResult = await supabaseRequest(`llm_section_outputs?${buildQuery(latestFilters)}`);
     if (latestResult.ok) {
-      fallbackRows = Array.isArray(latestResult.data) ? latestResult.data : [];
+      fallbackRows = (Array.isArray(latestResult.data) ? latestResult.data : [])
+        .filter(row => missingSectionKeys.includes(row?.section_key));
     }
   }
-  const sourceRows = exactRows.length > 0 ? exactRows : fallbackRows;
+  const sourceRows = [...exactRows, ...fallbackRows];
   const latestBySection = new Map();
   sourceRows.forEach((row) => {
     if (!row?.section_key || !row?.output_payload) return;
@@ -307,25 +310,35 @@ async function fetchCachedSectionInterpretations(params) {
   const interpretations = {};
   const generatedAtBySection = {};
   const qualityBySection = {};
+  const staleBySection = {};
+  const snapshotKeyBySection = {};
   SECTION_CACHE_KEYS.forEach((sectionKey) => {
     const row = latestBySection.get(sectionKey);
     if (!row?.output_payload) return;
     interpretations[sectionKey] = row.output_payload;
     generatedAtBySection[sectionKey] = row.generated_at;
     qualityBySection[sectionKey] = row.quality_status;
+    staleBySection[sectionKey] = !exactSectionKeys.has(sectionKey);
+    snapshotKeyBySection[sectionKey] = row.source_snapshot_key || null;
   });
 
   const sectionKeys = Object.keys(interpretations);
+  const staleSectionKeys = Object.entries(staleBySection)
+    .filter(([, isStale]) => isStale)
+    .map(([sectionKey]) => sectionKey);
   return {
     hit: sectionKeys.length > 0,
     complete: SECTION_CACHE_KEYS.every(sectionKey => sectionKeys.includes(sectionKey)),
     available: true,
-    staleSnapshot: exactRows.length === 0 && fallbackRows.length > 0,
+    staleSnapshot: staleSectionKeys.length > 0,
     reason: sectionKeys.length > 0
-      ? (exactRows.length > 0 ? 'section_cache_hit' : 'latest_section_cache_hit_snapshot_mismatch')
+      ? (staleSectionKeys.length > 0 ? 'latest_section_cache_hit_snapshot_mismatch' : 'section_cache_hit')
       : 'section_cache_miss',
     requestedSnapshotKey: params.sourceSnapshotKey,
     sectionKeys,
+    staleSectionKeys,
+    staleBySection,
+    snapshotKeyBySection,
     generatedAtBySection,
     qualityBySection,
     interpretations
