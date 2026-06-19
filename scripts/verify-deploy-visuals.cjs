@@ -5,6 +5,9 @@ const path = require('node:path');
 
 const DEFAULT_URL = 'https://libscope2.netlify.app/';
 const TARGET_URL = process.env.VISUAL_VERIFY_URL || process.argv[2] || DEFAULT_URL;
+const REPORT_PATH = process.env.VISUAL_VERIFY_REPORT_PATH
+  ? path.resolve(process.env.VISUAL_VERIFY_REPORT_PATH)
+  : null;
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -41,6 +44,12 @@ function launchChrome() {
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
   return { chrome, userDataDir };
+}
+
+function writeReport(report) {
+  if (!REPORT_PATH) return;
+  fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
+  fs.writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2), 'utf-8');
 }
 
 function stopChrome(chrome) {
@@ -252,11 +261,7 @@ async function run() {
       screenshotPath
     };
 
-    if (process.env.VISUAL_VERIFY_REPORT_PATH) {
-      const reportPath = path.resolve(process.env.VISUAL_VERIFY_REPORT_PATH);
-      fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf-8');
-    }
+    writeReport(report);
 
     console.log(JSON.stringify(report, null, 2));
     if (failures.length > 0) {
@@ -271,6 +276,12 @@ async function run() {
 }
 
 run().catch(error => {
+  writeReport({
+    ok: false,
+    url: TARGET_URL,
+    error: error.message,
+    stack: error.stack
+  });
   console.error(error.stack || error.message);
   process.exit(1);
 });

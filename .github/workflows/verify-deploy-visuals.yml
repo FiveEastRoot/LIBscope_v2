@@ -32,10 +32,25 @@ jobs:
       - name: Wait for production deploy
         if: github.event_name == 'push'
         shell: pwsh
-        run: Start-Sleep -Seconds 90
+        run: Start-Sleep -Seconds 180
 
       - name: Verify production population visuals
-        run: npm run verify:deploy-visuals
+        shell: pwsh
+        run: |
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "Visual verification attempt $attempt of $maxAttempts"
+            npm run verify:deploy-visuals
+            if ($LASTEXITCODE -eq 0) {
+              exit 0
+            }
+            if ($attempt -lt $maxAttempts) {
+              $sleepSeconds = 45 * $attempt
+              Write-Host "Visual verification failed. Waiting $sleepSeconds seconds before retry..."
+              Start-Sleep -Seconds $sleepSeconds
+            }
+          }
+          exit $LASTEXITCODE
 
       - name: Upload visual verification report
         if: always()
