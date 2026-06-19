@@ -1,0 +1,94 @@
+name: Weekly Auto Improvement
+
+on:
+  schedule:
+    # 매주 일요일 05:30 (KST) = 매주 토요일 20:30 (UTC)
+    # 기존 refresh-insight-cache, refresh-llm-cache 워크플로우가 먼저 실행된 뒤 피드백/프롬프트 초안을 생성한다.
+    - cron: '30 20 * * 6'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview prompts without saving feedback or draft prompts'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      include_cache_refresh:
+        description: 'Also run source/LLM cache refresh before feedback'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      districts:
+        description: 'Comma-separated district names'
+        required: false
+        default: ''
+      artifact_types:
+        description: 'Comma-separated artifact types'
+        required: false
+        default: ''
+
+jobs:
+  weekly-auto-improvement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      INSIGHT_API_BASE_URL: ${{ secrets.INSIGHT_API_BASE_URL || 'https://libscope2.netlify.app/api/insight-api' }}
+      LLM_HARNESS_BASE_URL: ${{ secrets.LLM_HARNESS_BASE_URL || 'https://libscope2.netlify.app/api/llm-harness' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      DIRECT_OPENAI_API_KEY: ${{ secrets.DIRECT_OPENAI_API_KEY }}
+      DIRECT_ANTHROPIC_API_KEY: ${{ secrets.DIRECT_ANTHROPIC_API_KEY }}
+      DIRECT_GEMINI_API_KEY: ${{ secrets.DIRECT_GEMINI_API_KEY }}
+      AUTO_IMPROVE_FEEDBACK_PROVIDER: ${{ vars.AUTO_IMPROVE_FEEDBACK_PROVIDER || 'anthropic' }}
+      AUTO_IMPROVE_FEEDBACK_MODEL: ${{ vars.AUTO_IMPROVE_FEEDBACK_MODEL || '' }}
+      AUTO_IMPROVE_DISTRICTS: ${{ github.event.inputs.districts || vars.AUTO_IMPROVE_DISTRICTS || '강남구,노원구,은평구,영등포구,종로구' }}
+      AUTO_IMPROVE_ARTIFACT_TYPES: ${{ github.event.inputs.artifact_types || vars.AUTO_IMPROVE_ARTIFACT_TYPES || 'districtInsight,population,culture,education,socialSafety,reportBody' }}
+      AUTO_IMPROVE_ARTIFACT_LIMIT: '12'
+      AUTO_IMPROVE_FEEDBACK_LIMIT: '25'
+      WEEKLY_AUTO_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
+      WEEKLY_AUTO_SKIP_REFRESH: ${{ github.event.inputs.include_cache_refresh == 'true' && '0' || '1' }}
+      WEEKLY_AUTO_CONTINUE_ON_DRAFT_FAILURE: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required configuration
+        run: |
+          if [ -z "$INSIGHT_API_BASE_URL" ]; then
+            echo "::error::INSIGHT_API_BASE_URL is required."
+            exit 1
+          fi
+          if [ -z "$LLM_HARNESS_BASE_URL" ]; then
+            echo "::error::LLM_HARNESS_BASE_URL is required."
+            exit 1
+          fi
+          if [ "$WEEKLY_AUTO_DRY_RUN" != "1" ]; then
+            if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+              echo "::error::SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for save runs."
+              exit 1
+            fi
+            if [ -z "$DIRECT_OPENAI_API_KEY" ] && [ -z "$DIRECT_ANTHROPIC_API_KEY" ] && [ -z "$DIRECT_GEMINI_API_KEY" ]; then
+              echo "::error::At least one direct LLM API key is required for save runs."
+              exit 1
+            fi
+          fi
+          echo "Districts: $AUTO_IMPROVE_DISTRICTS"
+          echo "Artifacts: $AUTO_IMPROVE_ARTIFACT_TYPES"
+
+      - name: Run weekly auto-improvement
+        run: npm run auto-improve:weekly

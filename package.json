@@ -19,6 +19,7 @@
     "auto-improve:prompt-draft:sample": "node scripts/run-prompt-improvement-draft.cjs --save",
     "auto-improve:prompt-ab": "node scripts/run-prompt-ab-test.cjs",
     "auto-improve:prompt-activate": "node scripts/activate-prompt-version.cjs",
+    "auto-improve:weekly": "node scripts/run-weekly-auto-improvement.cjs",
     "seed:supabase": "node scripts/seed-supabase-metrics.cjs",
     "notion:create": "node scripts/notion-create-page.cjs",
     "verify:deploy-visuals": "node scripts/verify-deploy-visuals.cjs",

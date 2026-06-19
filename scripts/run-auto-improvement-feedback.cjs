@@ -47,6 +47,10 @@ const DISTRICTS = (process.env.AUTO_IMPROVE_DISTRICTS || DISTRICT)
   .split(',')
   .map(item => item.trim())
   .filter(Boolean);
+const ARTIFACT_TYPE_FILTER = (process.env.AUTO_IMPROVE_ARTIFACT_TYPES || '')
+  .split(',')
+  .map(item => item.trim())
+  .filter(Boolean);
 const ARTIFACT_LIMIT = Math.max(1, parseInt(process.env.AUTO_IMPROVE_ARTIFACT_LIMIT || '5', 10));
 const CONTENT_MAX_CHARS = Math.max(4000, parseInt(process.env.AUTO_IMPROVE_CONTENT_MAX_CHARS || '24000', 10));
 
@@ -100,6 +104,7 @@ function pickArtifacts(payload = {}, districtName = DISTRICT) {
     .filter((item, index, all) => all.findIndex(other => (
       other.artifactType === item.artifactType && other.sectionKey === item.sectionKey
     )) === index)
+    .filter(item => ARTIFACT_TYPE_FILTER.length === 0 || ARTIFACT_TYPE_FILTER.includes(item.artifactType))
     .map(item => ({
       ...item,
       districtName,
@@ -157,6 +162,7 @@ async function main() {
   console.log(`Auto-improvement feedback ${DRY_RUN ? 'dry-run' : 'save-run'}`);
   console.log(`Framework: ${FEEDBACK_FRAMEWORK_VERSION}`);
   console.log(`Districts: ${DISTRICTS.join(', ')}`);
+  console.log(`Artifact filter: ${ARTIFACT_TYPE_FILTER.length > 0 ? ARTIFACT_TYPE_FILTER.join(', ') : 'none'}`);
   console.log(`Insight API: ${INSIGHT_API_BASE_URL}`);
   console.log(`LLM harness: ${LLM_HARNESS_BASE_URL}`);
 
@@ -203,7 +209,7 @@ async function main() {
   console.log(`Feedback model: ${modelPick.provider}/${modelPick.model}`);
   const sourceSnapshotKeys = [...new Set(districtPackets.map(packet => packet.llmPayload.snapshotKey).filter(Boolean))];
   const run = await createFeedbackRun({
-    runType: 'manual_sample',
+    runType: process.env.AUTO_IMPROVE_RUN_TYPE || 'manual_sample',
     sourceSnapshotKey: sourceSnapshotKeys.length === 1 ? sourceSnapshotKeys[0] : null,
     feedbackFrameworkVersion: FEEDBACK_FRAMEWORK_VERSION,
     feedbackModelRegistryVersion: FEEDBACK_MODEL_REGISTRY_VERSION,
