@@ -110,7 +110,7 @@ function districtScreenResponseFormat() {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['interpretations', 'insight', 'reportNarrative'],
+        required: ['interpretations', 'insight'],
         properties: {
           interpretations: {
             type: 'object',
@@ -139,28 +139,6 @@ function districtScreenResponseFormat() {
                 maxItems: 2,
                 items: { type: 'string' }
               }
-            }
-          },
-          reportNarrative: {
-            type: 'object',
-            additionalProperties: false,
-            required: [
-              'executiveSummary',
-              'population',
-              'culture',
-              'education',
-              'socialSafety',
-              'libraryImplications',
-              'cautions'
-            ],
-            properties: {
-              executiveSummary: { type: 'string', minLength: 180 },
-              population: { type: 'string', minLength: 160 },
-              culture: { type: 'string', minLength: 160 },
-              education: { type: 'string', minLength: 160 },
-              socialSafety: { type: 'string', minLength: 160 },
-              libraryImplications: { type: 'string', minLength: 180 },
-              cautions: { type: 'string', minLength: 120 }
             }
           }
         }
@@ -544,7 +522,7 @@ function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
   return [
     'LIBscope 자치구 지표 해석 하네스의 인사이트 문구를 생성한다.',
     '역할: 지역 도서관 정책·서비스 판단을 돕는 분석관. 단순 통계 해설자가 아님.',
-    '목표: 화면 노출용 섹션별 해석문과 자치구 종합 인사이트 3개 카드, 보고서 본문 초안 생성.',
+    '목표: 화면 노출용 섹션별 해석문과 자치구 종합 인사이트 3개 카드 생성.',
     '문체: 존대 금지, 보고서형 명사형 어미 우선.',
     '안전: 입력 수치에 없는 숫자 생성 금지. 민감 지표는 원인 단정 금지. 접근성, 정보 도달성, 실행 처방 중심.',
     '인사이트 정의: 최소 3개 지표축을 연결해 “이 데이터 조합은 무엇을 의미하는가”, “그래서 도서관/지역사회가 무엇을 해야 하는가”를 드러내는 판단문.',
@@ -564,9 +542,8 @@ function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
     '5. 자치구 종합 인사이트는 population, socialSafety, culture, education 중 최소 3개 축을 연결.',
     '6. “높다/낮다/많다/적다” 단독 표현 대신 서비스 접근성, 협력 자원, 정보 도달성, 공간/프로그램 기획 단위로 해석.',
     '7. 결론은 “검토/확인/점검이 필요”로 끝내지 않는다. 분석이 충분한 경우 시간대, 채널, 공간, 협력기관, 프로그램 운영 중 최소 1개를 어떻게 바꿀지 처방한다.',
-    '8. 상단 카드 3개는 reportNarrative를 압축하되, 명·개·건·%·가구·개교·개관 같은 숫자 표기를 쓰지 않음.',
+    '8. 상단 카드 3개는 섹션별 해석을 압축하되, 명·개·건·%·가구·개교·개관 같은 숫자 표기를 쓰지 않음.',
     '8-1. 작은 규모, 낮은 총량, 하위권 신호는 “확대보다/양보다” 같은 일반 비교로 쓰지 않는다. 반드시 좁은 운영 단위(시간대, 안내 채널, 공간, 협력기관, 방문·홍보 대상)의 배치·분리·우선순위 처방으로 바꾼다.',
-    '9. 보고서 본문은 지표 나열이 아니라 자치구 조건이 도서관 서비스 설계에 미치는 구조적 의미를 설명.',
     '10. 섹션별 interpretations의 summary는 1문장 판단문으로 작성하고, keyFindings는 각각 “근거: ... / 의미: ...” 구조로 작성.',
     '11. keyFindings의 근거에는 수치·단위·기준 또는 조건을 유지하고, 의미에는 접근성·협력·공간·프로그램·안내·정보 도달성 중 하나의 함의를 붙임.',
     '12. dataLineage.fixedDatasets는 고정 참고값으로 해석하고, refreshableDatasets는 snapshot 갱신 시 재계산되는 값으로 분리해 표현.',
@@ -635,15 +612,6 @@ function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
           { label: '실행 방향', text: 'string', bullets: ['string'] }
         ],
         cautions: ['string']
-      },
-      reportNarrative: {
-        executiveSummary: 'string',
-        population: 'string',
-        culture: 'string',
-        education: 'string',
-        socialSafety: 'string',
-        libraryImplications: 'string',
-        cautions: 'string'
       }
     }),
     '',
@@ -674,13 +642,7 @@ function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
     '- insight.cards[1]은 내부 유의사항이 아니라 사용자가 볼 수 있는 서비스 공백, 접근성 공백, 연결 실패 가능성을 제시.',
     '- insight.cards[2]은 도서관 서비스·협력·공간/프로그램을 어떻게 바꿀지 실행 방향을 제시.',
     '- 각 insight.cards text는 “지표 간 관계 + 분석 결과 + 도서관 운영 처방” 구조로 작성.',
-    '- reportNarrative는 보고서 본문 슬롯이며 각 항목은 3~5문장, bullet이 아닌 문단형 문장.',
-    '- reportNarrative의 7개 키(executiveSummary, population, culture, education, socialSafety, libraryImplications, cautions)는 모두 반드시 작성.',
-    '- reportNarrative.executiveSummary는 종합 인사이트 3개 카드보다 더 상세한 논리 흐름을 제공.',
-    '- reportNarrative.libraryImplications는 인구·사회안전망·문화·교육 중 최소 4개 축을 도서관 운영 처방으로 연결.',
-    '- reportNarrative 각 항목은 “근거 지표 묶음 → 분석 결과 → 도서관 의사결정 → 실행 처방” 순서를 따른다.',
-    '- reportNarrative에는 고정값과 갱신값을 구분하는 문장을 최소 1회 포함.',
-    '- 고정값/갱신값/기준 차이/원인 단정 금지 같은 내부 통제 문구는 reportNarrative.cautions 또는 섹션 cautions에만 사용하고, insight.cards bullets에는 쓰지 않음.',
+    '- 고정값/갱신값/기준 차이/원인 단정 금지 같은 내부 통제 문구는 섹션 cautions에만 사용하고, insight.cards bullets에는 쓰지 않음.',
     '- evidenceRefs는 반환하지 말고 입력의 근거 구조를 보존한다고 가정.',
     '- 모든 출력 문장에는 분석 결과 또는 실행 처방 동사(의미, 시사함, 분리, 재배치, 편성, 설계, 운영, 전환, 연계, 제공)를 포함.',
     '- 실행 처방은 단정해도 되지만 원인·결과 발생은 단정하지 않는다. “실패가 생김” 대신 “실패 가능성이 커짐”, “공백이 커질 수 있음”으로 표현.',
@@ -849,7 +811,7 @@ function buildScreenCardRepairPrompt({ prompt, generatedText, quality }) {
     '',
     '--- SCREEN CARD REPAIR PASS ---',
     'The previous output failed deterministic LIBscope screen-card quality gates.',
-    'Repair only insight.cards and insight.cautions. Preserve the same JSON schema, but do not rewrite interpretations or reportNarrative conceptually.',
+    'Repair only insight.cards and insight.cautions. Preserve the same JSON schema, but do not rewrite interpretations conceptually.',
     'The application will use only the repaired insight object from your response.',
     '',
     'Hard requirements for this repair:',
