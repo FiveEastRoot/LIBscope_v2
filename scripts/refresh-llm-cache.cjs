@@ -8,6 +8,7 @@ const LLM_HARNESS_BASE_URL = process.env.LLM_HARNESS_BASE_URL
 const CONCURRENCY = Math.max(1, parseInt(process.env.LLM_REFRESH_CONCURRENCY || '2', 10));
 const SLEEP_MS = Math.max(0, parseInt(process.env.LLM_REFRESH_SLEEP_MS || '500', 10));
 const PROVIDER = process.env.LLM_REFRESH_PROVIDER || 'direct-openai';
+const FORCE_GENERATE = process.env.LLM_REFRESH_FORCE_GENERATE === '1';
 const SOURCE_FORCE_REFRESH = process.env.LLM_SOURCE_FORCE_REFRESH === '1';
 const LIMIT = Math.max(0, parseInt(process.env.LLM_REFRESH_LIMIT || '0', 10));
 
@@ -41,7 +42,7 @@ async function refreshDistrictLlmCache(gu) {
   const response = await axios.post(LLM_HARNESS_BASE_URL, {
     type: 'district_screen',
     provider: PROVIDER,
-    forceGenerate: false,
+    forceGenerate: FORCE_GENERATE,
     districtData,
     cultureMetrics: {}
   }, {
