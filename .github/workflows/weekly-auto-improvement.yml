@@ -1,10 +1,11 @@
 name: Weekly Auto Improvement
 
 on:
-  schedule:
-    # 매주 일요일 05:30 (KST) = 매주 토요일 20:30 (UTC)
-    # 기존 refresh-insight-cache, refresh-llm-cache 워크플로우가 먼저 실행된 뒤 피드백/프롬프트 초안을 생성한다.
-    - cron: '30 20 * * 6'
+  # 자동개선 일정을 다시 켤 때 아래 4줄의 주석을 해제한다.
+  # schedule:
+  #   # 매주 일요일 05:30 (KST) = 매주 토요일 20:30 (UTC)
+  #   # 기존 refresh-insight-cache, refresh-llm-cache 실행 후 피드백/프롬프트 초안을 생성한다.
+  #   - cron: '30 20 * * 6'
   workflow_dispatch:
     inputs:
       dry_run:

@@ -1,9 +1,10 @@
 name: Refresh LLM Insight Cache Weekly
 
 on:
-  schedule:
-    # 매주 일요일 04:00 (KST) = 매주 토요일 19:00 (UTC)
-    - cron: '0 19 * * 6'
+  # 정기 캐시 생성을 다시 켤 때 아래 3줄의 주석을 해제한다.
+  # schedule:
+  #   # 매주 일요일 04:00 (KST) = 매주 토요일 19:00 (UTC)
+  #   - cron: '0 19 * * 6'
   workflow_dispatch:
 
 jobs:
