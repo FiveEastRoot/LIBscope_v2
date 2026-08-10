@@ -718,6 +718,7 @@ async function callOpenAiJson({ model, prompt, route = 'direct' }) {
     : normalizeBaseUrl(getEnv('DIRECT_OPENAI_BASE_URL'), 'https://api.openai.com/v1');
   const requestBody = {
     model,
+    reasoning_effort: getEnv('OPENAI_REASONING_EFFORT_INSIGHT') || 'none',
     messages: [
       { role: 'system', content: 'You return only valid JSON for a Korean public-sector analytics dashboard.' },
       { role: 'user', content: prompt }
