@@ -283,7 +283,9 @@ export default async function llmHarness(request) {
         basePayload,
         route: modelPick.route,
         provider: modelPick.provider,
-        model: modelPick.model
+        model: modelPick.model,
+        // Netlify must finish one cache generation within the synchronous function limit.
+        maxQualityRetries: 0
       });
       const generatedCardsValidation = validateGeneratedInsightCards(generatedText);
       if (!generatedCardsValidation.ok) {
