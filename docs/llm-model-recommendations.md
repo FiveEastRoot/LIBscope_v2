@@ -17,7 +17,7 @@
 ## 확인한 공식 기준
 
 - Netlify AI Gateway는 OpenAI, Anthropic, Gemini 모델을 공식 지원하며, Mistral은 현재 별도 직접 API 후보로 관리.
-- OpenAI `gpt-5.4-mini`는 `gpt-5.4`, `gpt-5.5`보다 저렴하므로 반복 생성과 화면 초안에 우선 배치.
+- OpenAI `gpt-5.6-luna`는 반복 생성과 화면 초안에 우선 배치하고, `gpt-5.6-terra`는 보고서와 품질 승격에 한정.
 - Gemini `gemini-2.5-flash-lite`와 `gemini-3.1-flash-lite`는 대량 처리와 단순 지표 해석에 유리한 비용대.
 - Anthropic `claude-haiku-4-5`는 저비용 Claude 후보, `claude-sonnet-4-6`은 장문 보고서 보조/대안 후보.
 - Mistral `mistral-small-latest`는 매우 저렴한 직접 API 후보이나 Netlify AI Gateway 기본 경로와 분리 필요.
@@ -28,11 +28,11 @@
 
 | 판단 단위 | 기본 비용 단계 | 기본 모델 | 대안 모델 | 승격 조건 |
 | --- | --- | --- | --- | --- |
-| 개별 지표묶음 짧은 해석 | 저비용 | `gemini-2.5-flash-lite` | `gpt-5.4-mini`, `claude-haiku-4-5`, `mistral-small-latest` | JSON/schema 실패, 수치 누락, 문체 위반 시 `gpt-5.4-mini` |
-| 자치구 종합 인사이트 | 균형 | `gpt-5.4-mini` | `gemini-3.1-flash-lite`, `claude-haiku-4-5` | 지표 간 충돌, 공개 문구 품질 부족 시 `gpt-5.4` 또는 `claude-sonnet-4-6` |
-| 자치구 보고서 다운로드 | 요청형 고품질 | `gpt-5.4` | 초안 `gemini-3.1-pro-preview`, 대안 `claude-sonnet-4-6` | 기관 제출본, 민감한 결론, 장문 구조 오류 시 `gpt-5.5` |
-| 문화역량 고정 데이터 사전 생성 | 대량 저비용 | `gemini-2.5-flash-lite` | `mistral-small-latest`, `gpt-5.4-mini` | 자치구별 출력 품질 편차가 큰 경우 일부만 `gpt-5.4-mini` 재생성 |
-| 교육/사회안전망/인구 섹션 해석 | 저비용-균형 | `gpt-5.4-mini` | `gemini-3.1-flash-lite`, `claude-haiku-4-5` | 정책적 함의가 커지거나 보고서 본문에 포함될 때 상위 보고서 모델로 통합 |
+| 개별 지표묶음 짧은 해석 | 저비용 | `gpt-5.6-luna` | `gemini-2.5-flash-lite`, `claude-haiku-4-5` | JSON/schema 실패, 수치 누락, 문체 위반 시 `gpt-5.6-terra` |
+| 자치구 종합 인사이트 | 균형 | `gpt-5.6-luna` | `gemini-3.1-flash-lite`, `claude-haiku-4-5` | 지표 간 충돌, 공개 문구 품질 부족 시 `gpt-5.6-terra` |
+| 자치구 보고서 다운로드 | 요청형 고품질 | `gpt-5.6-terra` | 초안 `gpt-5.6-luna`, 대안 `claude-sonnet-4-6` | 기관 제출본, 민감한 결론, 장문 구조 오류 시 `gpt-5.6-terra` 유지 |
+| 문화역량 고정 데이터 사전 생성 | 대량 저비용 | `gpt-5.6-luna` | `gemini-2.5-flash-lite`, `mistral-small-latest` | 자치구별 출력 품질 편차가 큰 경우 일부만 `gpt-5.6-terra` 재생성 |
+| 교육/사회안전망/인구 섹션 해석 | 저비용-균형 | `gpt-5.6-luna` | `gemini-3.1-flash-lite`, `claude-haiku-4-5` | 정책적 함의가 커지거나 보고서 본문에 포함될 때 `gpt-5.6-terra`로 통합 |
 
 ## 비용 절감 규칙
 
@@ -54,10 +54,10 @@ LLM_ESCALATION_ENABLED=true
 
 # OpenAI
 OPENAI_API_KEY=
-OPENAI_MODEL_SHORT=gpt-5.4-mini
-OPENAI_MODEL_INSIGHT=gpt-5.4-mini
-OPENAI_MODEL_REPORT=gpt-5.4
-OPENAI_MODEL_PREMIUM=gpt-5.5
+OPENAI_MODEL_SHORT=gpt-5.6-luna
+OPENAI_MODEL_INSIGHT=gpt-5.6-luna
+OPENAI_MODEL_REPORT=gpt-5.6-terra
+OPENAI_MODEL_PREMIUM=gpt-5.6-terra
 
 # Gemini
 GEMINI_API_KEY=

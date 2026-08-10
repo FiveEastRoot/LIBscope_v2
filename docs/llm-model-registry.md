@@ -41,9 +41,8 @@
 | `gemini-2.5-flash-lite` | Gemini | low | 고정 데이터셋 및 단문 지표 해석 1차 생성 | 문화역량 고정 해석, 주변 시설 단문 해석, 대량 precompute | 민감한 결론 단정, 최종 보고서 단독 생성 |
 | `gemini-3.1-flash-lite` | Gemini | low-balanced | 화면용 보조 인사이트 및 대안 생성 | 종합 인사이트 대안, 섹션별 빠른 초안 | 장문 정책 보고서 최종본 |
 | `gemini-3.1-pro-preview` | Gemini | balanced-report | 보고서 초안 및 장문 대안 | 보고서 초안, 장문 구조 실험 | 최종 제출본 단독 검수 |
-| `gpt-5.4-mini` | OpenAI | balanced | 화면 노출용 기본 해석과 종합 인사이트 | 인구구조, 사회안전망, 교육인프라, 자치구 종합 인사이트 | 기관 제출용 장문 최종 검수 |
-| `gpt-5.4` | OpenAI | report | 자치구 보고서 본문 생성 | 자치구 보고서 다운로드, 여러 지표묶음 통합 해석 | 단순 반복 생성 |
-| `gpt-5.5` | OpenAI | premium | 최종 제출본 검수 및 민감 결론 재작성 | 기관 제출본, 정책 결론 품질 검수, 고위험 문구 조정 | 일반 화면 진입 시 실시간 호출 |
+| `gpt-5.6-luna` | OpenAI | efficient | 기본 해석, 종합 인사이트, 대량 캐시 생성 | 인구구조, 사회안전망, 교육인프라, 자치구 종합 인사이트 | 기관 제출용 장문 최종 검수 |
+| `gpt-5.6-terra` | OpenAI | balanced-report | 보고서 본문과 품질 승격 생성 | 자치구 보고서, 지표 충돌 해석, 품질 게이트 실패 재생성 | 단순 반복 생성 |
 | `claude-haiku-4-5` | Anthropic | low-balanced | 저비용 보조 해석과 보수적 문구 초안 | 문체 대안, 민감 지표의 조심스러운 초안 | 복잡한 장문 보고서 단독 생성 |
 | `claude-sonnet-4-6` | Anthropic | report-review | 장문 흐름 검수와 정책 문구 보조 | 보고서 보조 검수, 종합 인사이트 승격, 보수적 표현 재작성 | 대량 사전 생성 |
 | `mistral-small-latest` | Mistral | low-direct | 직접 API 기반 저비용 대량 초안 후보 | 문화역량 고정 해석 실험, 대량 생성 비용 비교 | Netlify Gateway 전용 운영, 민감 지표 최종 문구 |
@@ -52,14 +51,14 @@
 
 | 판단 단위 | 기본 모델 | 보조/대안 | 승격 모델 | 저장 전략 |
 | --- | --- | --- | --- | --- |
-| 개별 지표묶음 짧은 해석 | `gemini-2.5-flash-lite` | `claude-haiku-4-5`, `mistral-small-latest` | `gpt-5.4-mini` | 지표 snapshot 단위 캐시 |
-| 자치구 종합 인사이트 | `gpt-5.4-mini` | `gemini-3.1-flash-lite`, `claude-haiku-4-5` | `gpt-5.4` 또는 `claude-sonnet-4-6` | 화면 카드 캐시 |
-| 자치구 보고서 다운로드 | `gpt-5.4` | `gemini-3.1-pro-preview`, `claude-sonnet-4-6` | `gpt-5.5` | 보고서 버전 아카이브 |
-| 문화역량 고정 해석 | `gemini-2.5-flash-lite` | `mistral-small-latest` | `gpt-5.4-mini` | 최초 생성 후 DB 저장 |
-| 인구구조 분석 | `gpt-5.4-mini` | `gemini-3.1-flash-lite` | `gpt-5.4` | 지표 갱신 전까지 캐시 |
-| 교육인프라 | `gpt-5.4-mini` | `claude-haiku-4-5` | `claude-sonnet-4-6` | 지표 갱신 전까지 캐시 |
-| 사회안전망 대상자 구성 | `gpt-5.4-mini` | `claude-haiku-4-5` | `gpt-5.4` | 지표 갱신 전까지 캐시 |
-| 주변 공공기관·문화시설 | `gemini-2.5-flash-lite` | `gpt-5.4-mini` | `gpt-5.4-mini` | 선택 도서관/좌표 기준 캐시 |
+| 개별 지표묶음 짧은 해석 | `gpt-5.6-luna` | `gemini-2.5-flash-lite`, `claude-haiku-4-5` | `gpt-5.6-terra` | 지표 snapshot 단위 캐시 |
+| 자치구 종합 인사이트 | `gpt-5.6-luna` | `gemini-3.1-flash-lite`, `claude-haiku-4-5` | `gpt-5.6-terra` | 화면 카드 캐시 |
+| 자치구 보고서 다운로드 | `gpt-5.6-terra` | `gpt-5.6-luna`, `claude-sonnet-4-6` | `gpt-5.6-terra` | 보고서 버전 아카이브 |
+| 문화역량 고정 해석 | `gpt-5.6-luna` | `gemini-2.5-flash-lite`, `mistral-small-latest` | `gpt-5.6-terra` | 최초 생성 후 DB 저장 |
+| 인구구조 분석 | `gpt-5.6-luna` | `gemini-3.1-flash-lite` | `gpt-5.6-terra` | 지표 갱신 전까지 캐시 |
+| 교육인프라 | `gpt-5.6-luna` | `claude-haiku-4-5` | `gpt-5.6-terra` | 지표 갱신 전까지 캐시 |
+| 사회안전망 대상자 구성 | `gpt-5.6-luna` | `claude-haiku-4-5` | `gpt-5.6-terra` | 지표 갱신 전까지 캐시 |
+| 주변 공공기관·문화시설 | `gpt-5.6-luna` | `gemini-2.5-flash-lite` | `gpt-5.6-terra` | 선택 도서관/좌표 기준 캐시 |
 
 ## 모델 교체 절차
 

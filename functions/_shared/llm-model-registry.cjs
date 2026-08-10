@@ -1,4 +1,4 @@
-const MODEL_REGISTRY_VERSION = 'llm-model-registry-v0.1';
+const MODEL_REGISTRY_VERSION = 'llm-model-registry-v0.2';
 
 const LLM_PROVIDERS = {
   openai: {
@@ -53,26 +53,19 @@ const LLM_MODEL_CATALOG = {
     useWhen: ['보고서 초안', '장문 구조 실험'],
     avoidWhen: ['최종 제출본 단독 검수']
   },
-  'gpt-5.4-mini': {
+  'gpt-5.6-luna': {
     provider: 'openai',
-    costClass: 'balanced',
-    role: '화면 노출용 기본 해석과 종합 인사이트',
-    useWhen: ['인구구조', '사회안전망', '교육인프라', '자치구 종합 인사이트'],
-    avoidWhen: ['기관 제출용 장문 최종 검수']
+    costClass: 'efficient',
+    role: '기본 해석, 종합 인사이트, 대량 캐시 생성',
+    useWhen: ['인구구조', '사회안전망', '교육인프라', '자치구 종합 인사이트', '대량 precompute'],
+    avoidWhen: ['기관 제출용 장문 최종 검수', '민감 결론의 최종 확정']
   },
-  'gpt-5.4': {
+  'gpt-5.6-terra': {
     provider: 'openai',
-    costClass: 'report',
-    role: '자치구 보고서 본문 생성',
-    useWhen: ['자치구 보고서 다운로드', '여러 지표묶음 통합 해석'],
+    costClass: 'balanced-report',
+    role: '보고서 본문과 품질 승격 생성',
+    useWhen: ['자치구 보고서 다운로드', '여러 지표묶음 통합 해석', '품질 게이트 실패 재생성'],
     avoidWhen: ['단순 반복 생성']
-  },
-  'gpt-5.5': {
-    provider: 'openai',
-    costClass: 'premium',
-    role: '최종 제출본 검수 및 민감 결론 재작성',
-    useWhen: ['기관 제출본', '정책 결론 품질 검수', '고위험 문구 조정'],
-    avoidWhen: ['일반 화면 진입 시 실시간 호출']
   },
   'claude-haiku-4-5': {
     provider: 'anthropic',
@@ -102,52 +95,52 @@ const MODEL_RECOMMENDATIONS = {
     purpose: '개별 지표묶음의 짧은 해석문 생성',
     costTier: 'low',
     costTierLabel: '저비용',
-    defaultProvider: 'gemini',
-    defaultModel: 'gemini-2.5-flash-lite',
-    openai: 'gpt-5.4-mini',
+    defaultProvider: 'openai',
+    defaultModel: 'gpt-5.6-luna',
+    openai: 'gpt-5.6-luna',
     gemini: 'gemini-2.5-flash-lite',
     anthropic: 'claude-haiku-4-5',
     directOptional: 'mistral-small-latest',
-    escalationModel: 'gpt-5.4-mini',
-    reason: '짧은 구조화 출력, 반복 생성, 비용/지연시간 관리 우선. 품질 게이트 실패 시 mini급으로 승격'
+    escalationModel: 'gpt-5.6-terra',
+    reason: '짧은 구조화 출력과 반복 생성은 Luna를 사용하고, 품질 게이트 실패 시 Terra로 승격'
   },
   districtInsight: {
     purpose: '자치구 종합 인사이트 3문장 및 화면 카드 생성',
     costTier: 'balanced',
     costTierLabel: '균형',
     defaultProvider: 'openai',
-    defaultModel: 'gpt-5.4-mini',
-    openai: 'gpt-5.4-mini',
+    defaultModel: 'gpt-5.6-luna',
+    openai: 'gpt-5.6-luna',
     gemini: 'gemini-3.1-flash-lite',
     anthropic: 'claude-haiku-4-5',
-    escalationModel: 'gpt-5.4 또는 claude-sonnet-4-6',
-    reason: '여러 지표묶음 간 우선순위와 충돌 해석이 필요하되, 화면용 3문장 출력은 mini급부터 시작'
+    escalationModel: 'gpt-5.6-terra',
+    reason: '화면용 인사이트는 Luna로 생성하고, 지표 충돌이나 품질 게이트 실패 시 Terra로 승격'
   },
   districtReport: {
     purpose: '자치구 HTML 기반 보고서 본문 생성',
     costTier: 'premium-on-demand',
     costTierLabel: '요청형 고품질',
     defaultProvider: 'openai',
-    defaultModel: 'gpt-5.4',
-    openai: 'gpt-5.4',
+    defaultModel: 'gpt-5.6-terra',
+    openai: 'gpt-5.6-terra',
     gemini: 'gemini-3.1-pro-preview',
     anthropic: 'claude-sonnet-4-6',
-    premiumModel: 'gpt-5.5',
-    economyModel: 'gemini-3.1-pro-preview',
-    reason: '긴 맥락 유지, 정책 보고서형 문체, 구조화된 장문 생성 필요. 최종 제출본 또는 충돌 검토에만 premium 승격'
+    premiumModel: 'gpt-5.6-terra',
+    economyModel: 'gpt-5.6-luna',
+    reason: '일반 초안은 Luna를 허용하고, 장문 보고서와 최종 검수는 Terra로 제한'
   },
   batchPrecompute: {
     purpose: '고정 데이터셋 사전 생성 및 DB 저장',
     costTier: 'low-batch',
     costTierLabel: '대량 저비용',
-    defaultProvider: 'gemini',
-    defaultModel: 'gemini-2.5-flash-lite',
-    openai: 'gpt-5.4-mini',
+    defaultProvider: 'openai',
+    defaultModel: 'gpt-5.6-luna',
+    openai: 'gpt-5.6-luna',
     gemini: 'gemini-2.5-flash-lite',
     anthropic: 'claude-haiku-4-5',
     directOptional: 'mistral-small-latest',
-    escalationModel: 'gpt-5.4-mini',
-    reason: '반복 가능한 템플릿 출력과 대량 처리 비용 관리 우선. 고정 데이터는 생성 후 DB 캐시'
+    escalationModel: 'gpt-5.6-terra',
+    reason: '대량 생성은 Luna로 처리해 DB에 저장하고, 실패 항목만 Terra로 승격'
   }
 };
 

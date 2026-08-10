@@ -489,7 +489,7 @@ function pickProviderAndModel({ requestedProvider, requestedModel, recommendatio
       : recommendation.defaultProvider || 'openai';
 
   const modelByProvider = {
-    openai: getEnv('OPENAI_MODEL_INSIGHT') || recommendation.openai || recommendation.defaultModel || 'gpt-5.4-mini',
+    openai: getEnv('OPENAI_MODEL_INSIGHT') || recommendation.openai || recommendation.defaultModel || 'gpt-5.6-luna',
     gemini: getEnv('GEMINI_MODEL_INSIGHT') || recommendation.gemini || recommendation.defaultModel || 'gemini-2.5-flash-lite',
     anthropic: getEnv('ANTHROPIC_MODEL_SHORT') || recommendation.anthropic || recommendation.defaultModel || 'claude-haiku-4-5'
   };

@@ -502,9 +502,9 @@ function App() {
   const activeSocialSafetySegmentTone = socialSafetySegmentToneByKey[socialSafetyView] || 'indigo';
   const insightModelBadges = getModelRecommendationBadges(
     llmHarness?.insight?.modelRecommendation || {
-      defaultModel: 'gpt-5.4-mini',
+      defaultModel: 'gpt-5.6-luna',
       costTierLabel: '균형',
-      escalationModel: 'gpt-5.4 또는 claude-sonnet-4-6'
+      escalationModel: 'gpt-5.6-terra'
     }
   ).slice(0, 3);
 

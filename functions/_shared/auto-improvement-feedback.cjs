@@ -338,7 +338,7 @@ function pickFeedbackProviderAndModel({ requestedProvider, requestedModel } = {}
 
   const defaults = {
     anthropic: getEnv('AUTO_IMPROVE_ANTHROPIC_MODEL') || 'claude-sonnet-4-6',
-    openai: getEnv('AUTO_IMPROVE_OPENAI_MODEL') || 'gpt-5.4',
+    openai: getEnv('AUTO_IMPROVE_OPENAI_MODEL') || 'gpt-5.6-luna',
     gemini: getEnv('AUTO_IMPROVE_GEMINI_MODEL') || 'gemini-3.1-pro-preview'
   };
 
