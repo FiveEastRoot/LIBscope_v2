@@ -740,9 +740,31 @@ function App() {
         
         {/* 상단 필터 컨트롤러 */}
         <section className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full md:w-auto">
+          <div className="flex w-full flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end md:min-w-0 md:flex-1">
+            {activeTab === 'library' && (
+              <div className="flex shrink-0 flex-col">
+                <label className="text-xs font-bold text-slate-400 mb-1">기준 위치</label>
+                <div className="flex shrink-0 rounded-xl border border-slate-300 bg-slate-50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => changeLibraryTargetMode('library')}
+                    className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-extrabold transition-colors ${libraryTargetMode === 'library' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    도서관 선택
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => changeLibraryTargetMode('address')}
+                    className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-extrabold transition-colors ${libraryTargetMode === 'address' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    주소 입력
+                  </button>
+                </div>
+              </div>
+            )}
+
             {!(activeTab === 'library' && libraryTargetMode === 'address') && (
-              <div className="flex flex-col">
+              <div className="flex shrink-0 flex-col">
                 <label className="text-xs font-bold text-slate-400 mb-1">자치구 선택</label>
                 <select
                   value={selectedGu}
@@ -757,34 +779,14 @@ function App() {
             )}
 
             {activeTab === 'library' && (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <div className="flex flex-col">
-                  <label className="text-xs font-bold text-slate-400 mb-1">기준 위치</label>
-                  <div className="flex rounded-xl border border-slate-300 bg-slate-50 p-1">
-                    <button
-                      type="button"
-                      onClick={() => changeLibraryTargetMode('library')}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition-colors ${libraryTargetMode === 'library' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      도서관 선택
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => changeLibraryTargetMode('address')}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition-colors ${libraryTargetMode === 'address' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      주소 입력
-                    </button>
-                  </div>
-                </div>
-
+              <>
                 {libraryTargetMode === 'library' ? (
-                  <div className="flex flex-col">
+                  <div className="flex min-w-0 flex-1 flex-col sm:min-w-64">
                     <label className="text-xs font-bold text-slate-400 mb-1">도서관 선택</label>
                     <select
                       value={selectedLibrary}
                       onChange={(e) => setSelectedLibrary(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-64"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       {librariesInGu.map(lib => (
                         <option key={lib} value={lib}>{lib}</option>
@@ -792,7 +794,7 @@ function App() {
                     </select>
                   </div>
                 ) : (
-                  <form onSubmit={handleAddressAnalysis} className="flex min-w-0 flex-1 flex-col">
+                  <form onSubmit={handleAddressAnalysis} className="flex min-w-0 flex-1 flex-col sm:min-w-96">
                     <label htmlFor="library-address" className="text-xs font-bold text-slate-400 mb-1">서울시 도로명·지번 주소</label>
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
                       <input
@@ -817,11 +819,11 @@ function App() {
                     {!addressError && mapError && <p className="mt-1 text-xs font-bold text-rose-600">{mapError}</p>}
                   </form>
                 )}
-              </div>
+              </>
             )}
           </div>
           
-          <div className="flex flex-col items-stretch md:items-end gap-2 text-slate-500 text-sm font-semibold">
+          <div className="flex shrink-0 flex-col items-stretch gap-2 text-sm font-semibold text-slate-500 md:max-w-sm md:items-end">
             {!(activeTab === 'library' && libraryTargetMode === 'address') && (
               <div className="flex items-center justify-start md:justify-end gap-1">
                 <MapPin className="text-blue-500" size={18} />
