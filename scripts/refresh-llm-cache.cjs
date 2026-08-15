@@ -8,6 +8,7 @@ const LLM_HARNESS_BASE_URL = process.env.LLM_HARNESS_BASE_URL
 const CONCURRENCY = Math.max(1, parseInt(process.env.LLM_REFRESH_CONCURRENCY || '2', 10));
 const SLEEP_MS = Math.max(0, parseInt(process.env.LLM_REFRESH_SLEEP_MS || '500', 10));
 const PROVIDER = process.env.LLM_REFRESH_PROVIDER || 'direct-openai';
+const MODEL = process.env.LLM_REFRESH_MODEL || '';
 const FORCE_GENERATE = process.env.LLM_REFRESH_FORCE_GENERATE === '1';
 const INSIGHT_ONLY = process.env.LLM_REFRESH_INSIGHT_ONLY === '1';
 const SOURCE_FORCE_REFRESH = process.env.LLM_SOURCE_FORCE_REFRESH === '1';
@@ -20,9 +21,16 @@ function sleep(ms) {
 function getDistricts() {
   const filePath = path.resolve(process.cwd(), 'library_dong_mapping.json');
   const mapping = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  return [...new Set(mapping.libraries.map(item => item.gu))]
+  const availableDistricts = [...new Set(mapping.libraries.map(item => item.gu))]
     .filter(gu => typeof gu === 'string' && gu.endsWith('구'))
     .sort();
+  const requestedDistricts = String(process.env.LLM_REFRESH_DISTRICTS || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+  return requestedDistricts.length > 0
+    ? requestedDistricts.filter(gu => availableDistricts.includes(gu))
+    : availableDistricts;
 }
 
 async function fetchDistrictData(gu) {
@@ -43,6 +51,7 @@ async function refreshDistrictLlmCache(gu) {
   const response = await axios.post(LLM_HARNESS_BASE_URL, {
     type: 'district_screen',
     provider: PROVIDER,
+    model: MODEL || undefined,
     forceGenerate: FORCE_GENERATE,
     regenerateInsightOnly: INSIGHT_ONLY,
     districtData,
@@ -64,6 +73,10 @@ async function refreshDistrictLlmCache(gu) {
   }
   if (!cacheStatus.hit) {
     throw new Error(cacheStatus.error || cacheStatus.reason || 'llm_cache_not_saved');
+  }
+  const insightQuality = payload.aiMeta?.insightQuality;
+  if (INSIGHT_ONLY && insightQuality && !insightQuality.screenCardPassed) {
+    throw new Error(`insight_quality_failed:${insightQuality.screenCardHardWarningCount || 0}`);
   }
 
   return {
@@ -113,6 +126,7 @@ async function main() {
   console.log(`Insight API: ${INSIGHT_API_BASE_URL}`);
   console.log(`LLM harness: ${LLM_HARNESS_BASE_URL}`);
   console.log(`Provider: ${PROVIDER}`);
+  console.log(`Model: ${MODEL || 'route default'}`);
   console.log(`Insight only: ${INSIGHT_ONLY ? 'yes' : 'no'}`);
 
   const { failCount, skipCount } = await runQueue(districts);

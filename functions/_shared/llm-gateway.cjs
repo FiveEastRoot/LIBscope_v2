@@ -297,11 +297,11 @@ function findWeakInsightPatternWarnings(text, context = {}) {
   const slot = context.slot || 'interpretation';
   const isCardBullet = slot === 'card_bullet';
   const hasBoundary = hasOperationalBoundary(value);
-  const push = (message) => warnings.push({
+  const push = (message, hardOverride = hard) => warnings.push({
     gate,
     index,
     scope,
-    hard,
+    hard: hardOverride,
     message
   });
 
@@ -312,13 +312,13 @@ function findWeakInsightPatternWarnings(text, context = {}) {
     push('필요/검토 필요 반복으로 운영 판단이 구체화되지 않음');
   }
   if (/(?:생활권|협력|접근성|프로그램|서비스|공간|안내).{0,16}(?:강화|확대|개선|필요|검토)/.test(value) && countAxisSignals(value) < 3 && (!isCardBullet || !hasBoundary)) {
-    push('생활권/협력/접근성 계열 일반어가 자치구 조건 없이 결론으로 사용됨');
+    push('생활권/협력/접근성 계열 일반어가 자치구 조건 없이 결론으로 사용됨', false);
   }
   if (/(?:저밀도|하위권|작(?:고|은)|부족|약한|낮은).{0,24}(?:확대보다|확장보다|대형 확대보다|양보다)/.test(value)) {
     push('작은 규모/낮은 총량을 일반적 축소·확대 비교로 처리하고 있어 운영 판단 단위가 약함');
   }
   if (/(?:고령|아동|생활인구|수급|가구|장애|외국인|문화|교육|학교|도서관|공공기관).{0,12}(?:,|·|\/).{0,80}(?:,|·|\/).{0,80}(?:필요|검토|유효|가능성|의미)/.test(value) && (!isCardBullet || !hasBoundary)) {
-    push('세 개 이상 지표명을 열거한 뒤 바로 결론을 붙이는 구조에 가까움');
+    push('세 개 이상 지표명을 열거한 뒤 바로 결론을 붙이는 구조에 가까움', false);
   }
   if (/(?:확인|검토|점검|볼 필요|살펴야|봐야|기준|근거)/.test(value) && !hasPrescriptiveAction(value)) {
     push('분석 결과가 실행 처방으로 이어지지 않고 확인·검토 지침에서 멈춤');
