@@ -123,6 +123,7 @@ function App() {
   const [resolvedAddress, setResolvedAddress] = useState('');
   const [addressSearching, setAddressSearching] = useState(false);
   const [addressError, setAddressError] = useState(null);
+  const libraryTargetModeRef = useRef('library');
   const [socialSafetyView, setSocialSafetyView] = useState('household');
   const [cultureReferenceView, setCultureReferenceView] = useState('general');
   const [educationCategory, setEducationCategory] = useState('elementary');
@@ -189,6 +190,7 @@ function App() {
       const res = await axios.get(`/api/insight-api`, {
         params: { type: 'library', gu: guName, library: libName }
       });
+      if (libraryTargetModeRef.current !== 'library') return;
       setLibraryDataDetail(res.data);
     } catch (err) {
       console.error(err);
@@ -205,6 +207,7 @@ function App() {
       const res = await axios.get(`/api/insight-api`, {
         params: { type: 'location', gu: guName, lat, lng }
       });
+      if (libraryTargetModeRef.current !== 'address') return;
       setLibraryDataDetail({
         ...res.data,
         address,
@@ -278,7 +281,9 @@ function App() {
   };
 
   const changeLibraryTargetMode = (mode) => {
+    libraryTargetModeRef.current = mode;
     setLibraryTargetMode(mode);
+    setLoading(false);
     setLibraryDataDetail(null);
     setResolvedAddress('');
     setAddressError(null);
