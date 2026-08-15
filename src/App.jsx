@@ -822,24 +822,18 @@ function App() {
           </div>
           
           <div className="flex flex-col items-stretch md:items-end gap-2 text-slate-500 text-sm font-semibold">
-            <div className="flex items-center justify-start md:justify-end gap-1">
-              <MapPin className="text-blue-500" size={18} />
-              <span>
-                선택 지역: 서울특별시{activeTab === 'library' && libraryTargetMode === 'address' ? '' : ` ${selectedGu}`}
-              </span>
-              {activeTab === 'library' && libraryTargetMode === 'library' && selectedLibrary && (
-                <>
-                  <ChevronRight size={16} />
-                  <span className="text-blue-600 font-bold">{selectedLibrary}</span>
-                </>
-              )}
-              {activeTab === 'library' && libraryTargetMode === 'address' && resolvedAddress && (
-                <>
-                  <ChevronRight size={16} />
-                  <span className="text-blue-600 font-bold">{resolvedAddress}</span>
-                </>
-              )}
-            </div>
+            {!(activeTab === 'library' && libraryTargetMode === 'address') && (
+              <div className="flex items-center justify-start md:justify-end gap-1">
+                <MapPin className="text-blue-500" size={18} />
+                <span>선택 지역: 서울특별시 {selectedGu}</span>
+                {activeTab === 'library' && selectedLibrary && (
+                  <>
+                    <ChevronRight size={16} />
+                    <span className="text-blue-600 font-bold">{selectedLibrary}</span>
+                  </>
+                )}
+              </div>
+            )}
             {activeTab === 'district' && (
               <button
                 type="button"
