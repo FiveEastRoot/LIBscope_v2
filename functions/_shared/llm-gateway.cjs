@@ -853,6 +853,8 @@ function buildScreenCardRepairPrompt({ prompt, generatedText, quality }) {
     '- 도서관 운영 판단 단위는 시간대, 안내 채널, 공간, 협력기관, 방문·홍보 대상 중 하나로 구체화한다.',
     '- insight.cards and bullets must not use 확인, 검토, 점검, 볼 필요, 살펴야, 봐야.',
     '- insight.cards and bullets must not use 단정, 주의, 유의, 고정값, 갱신값, 기준 차이, 캐시, or snapshot. Do not explain internal interpretation policy to users.',
+    '- “단정하지 않음”, “확인 후”, “확인하고”, “검토 후”처럼 금지어를 부정형이나 절차형으로 바꾸어 쓰는 것도 금지.',
+    '- 반환 직전 JSON 문자열에서 확인, 검토, 점검, 단정, 주의, 유의, 캐시, snapshot을 검색하고 하나라도 있으면 해당 문장을 실행 처방 문장으로 다시 작성.',
     '- Avoid repeating 필요함 or 검토 필요; use concrete Korean decision verbs such as 분리, 재배치, 편성, 설계, 운영, 제공, 연계, 우선 배정.',
     '- Do not output English scaffold words such as mismatch, concentration, complementarity, access gap, coordination burden, time slot, partner, or outreach segment.',
     '- A strong card text has two compact sentences: first sentence names the local relation; second sentence names the library decision unit and what must be checked before action.',
