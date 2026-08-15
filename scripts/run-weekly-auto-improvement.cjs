@@ -25,6 +25,15 @@ const SECTION_BY_ARTIFACT = {
   reportBody: 'reportBody'
 };
 
+const PROMPT_BY_ARTIFACT = {
+  districtInsight: 'district-summary-insight',
+  population: 'district-section-interpretation',
+  culture: 'district-section-interpretation',
+  education: 'district-section-interpretation',
+  socialSafety: 'district-section-interpretation',
+  reportBody: 'district-report-body'
+};
+
 function runStep(label, command, commandArgs, extraEnv = {}, { allowFailure = false } = {}) {
   return new Promise((resolve, reject) => {
     const executable = process.platform === 'win32' && command === 'npm' ? 'cmd.exe' : command;
@@ -95,7 +104,7 @@ async function draftPromptImprovements() {
 
   for (const artifactType of ARTIFACT_TYPES) {
     const sectionKey = SECTION_BY_ARTIFACT[artifactType] || artifactType;
-    const promptKey = process.env.AUTO_IMPROVE_PROMPT_KEY || `district-screen-${artifactType}`;
+    const promptKey = process.env.AUTO_IMPROVE_PROMPT_KEY || PROMPT_BY_ARTIFACT[artifactType] || `district-${artifactType}`;
     const scriptArgs = DRY_RUN
       ? ['run', 'auto-improve:prompt-draft:dry-run']
       : ['run', 'auto-improve:prompt-draft:sample'];

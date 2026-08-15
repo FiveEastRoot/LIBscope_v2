@@ -34,7 +34,9 @@ const {
   withCacheStatus
 } = cacheModule;
 
-const PROMPT_VERSION = 'district-screen-insight-v0.8';
+const SECTION_PROMPT_VERSION = 'district-section-interpretation-v0.1';
+const INSIGHT_PROMPT_VERSION = 'district-summary-insight-v0.1';
+const PROMPT_VERSION = `${SECTION_PROMPT_VERSION}+${INSIGHT_PROMPT_VERSION}`;
 const SECTION_CACHE_KEYS = ['population', 'culture', 'education', 'socialSafety'];
 
 function normalizeRegenerateSections(value) {
@@ -210,7 +212,7 @@ export default async function llmHarness(request) {
       guName,
       sourceSnapshotKey: basePayload.snapshotKey,
       harnessVersion: basePayload.harnessVersion,
-      promptVersion: PROMPT_VERSION,
+      promptVersion: SECTION_PROMPT_VERSION,
       modelRegistryVersion: MODEL_REGISTRY_VERSION
     });
 
@@ -279,11 +281,13 @@ export default async function llmHarness(request) {
     });
 
     try {
+      const generationBasePayload = applyCachedInterpretations(basePayload, sectionCacheLookup.interpretations);
       const generatedText = await generateDistrictScreenText({
-        basePayload,
+        basePayload: generationBasePayload,
         route: modelPick.route,
         provider: modelPick.provider,
         model: modelPick.model,
+        sectionKeys: regenerateSections.length > 0 ? regenerateSections : SECTION_CACHE_KEYS,
         // Netlify must finish one cache generation within the synchronous function limit.
         maxQualityRetries: 0
       });
@@ -303,29 +307,38 @@ export default async function llmHarness(request) {
           billingRoute: modelPick.route === 'gateway' ? 'netlify-ai-gateway' : 'direct-provider-api',
           provider: modelPick.provider,
           model: modelPick.model,
-          promptTemplate: PROMPT_VERSION,
+          promptTemplate: {
+            sections: SECTION_PROMPT_VERSION,
+            insight: INSIGHT_PROMPT_VERSION,
+            cache: PROMPT_VERSION
+          },
           insightQuality,
           directReadiness: getDirectReadiness(),
           gatewayReadiness: getGatewayReadiness()
         }
       });
-      const saved = await saveCachedDistrictInsight({
-        payload: mergedPayload,
-        districtData,
-        cultureMetrics,
-        promptVersion: PROMPT_VERSION,
-        outputSchemaVersion: CONTRACT_VERSION,
-        modelRegistryVersion: MODEL_REGISTRY_VERSION,
-        aiMeta: mergedPayload.aiMeta,
-        qualityStatus: insightQuality.passed ? 'passed' : 'needs_review',
-        qualityErrors: insightQuality.warnings || []
-      });
+      const canSaveDistrictInsight = regenerateSections.length === 0 || SECTION_CACHE_KEYS.every(
+        sectionKey => regenerateSections.includes(sectionKey) || Boolean(sectionCacheLookup.interpretations?.[sectionKey])
+      );
+      const saved = canSaveDistrictInsight
+        ? await saveCachedDistrictInsight({
+            payload: mergedPayload,
+            districtData,
+            cultureMetrics,
+            promptVersion: PROMPT_VERSION,
+            outputSchemaVersion: CONTRACT_VERSION,
+            modelRegistryVersion: MODEL_REGISTRY_VERSION,
+            aiMeta: mergedPayload.aiMeta,
+            qualityStatus: insightQuality.passed ? 'passed' : 'needs_review',
+            qualityErrors: insightQuality.warnings || []
+          })
+        : { saved: false, payload: mergedPayload };
       const sectionSaveKeys = regenerateSections.length > 0 ? regenerateSections : SECTION_CACHE_KEYS;
       const savedSections = await saveCachedSectionInterpretations({
         payload: mergedPayload,
         districtData,
         cultureMetrics,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: SECTION_PROMPT_VERSION,
         outputSchemaVersion: CONTRACT_VERSION,
         modelRegistryVersion: MODEL_REGISTRY_VERSION,
         aiMeta: mergedPayload.aiMeta,
@@ -346,20 +359,25 @@ export default async function llmHarness(request) {
           mode: 'llm',
           aiMeta: mergedPayload.aiMeta,
           generatedAt: mergedPayload.generatedAt,
+          insight: mergedPayload.insight,
           interpretations: {
             ...(payloadWithCachedSections.interpretations || {}),
             ...selectedInterpretations
           }
         };
         return jsonResponse(withSectionCacheStatus(withCacheStatus(responsePayload, {
-          hit: Boolean(cacheLookup.hit),
+          hit: saved.saved || Boolean(cacheLookup.hit),
           available: cacheLookup.available,
           canGenerate: false,
-          reason: cacheLookup.hit ? cacheLookup.payload?.cacheStatus?.reason || 'district_cache_reused' : cacheLookup.reason || 'cache_miss',
-          generatedAt: cacheLookup.payload?.cacheStatus?.generatedAt,
-          qualityStatus: cacheLookup.payload?.cacheStatus?.qualityStatus,
-          provider: cacheLookup.payload?.cacheStatus?.provider,
-          model: cacheLookup.payload?.cacheStatus?.model
+          reason: saved.saved
+            ? saved.payload?.cacheStatus?.reason || 'district_cache_saved'
+            : cacheLookup.hit
+              ? cacheLookup.payload?.cacheStatus?.reason || 'district_cache_reused'
+              : 'district_cache_waiting_for_complete_sections',
+          generatedAt: saved.payload?.cacheStatus?.generatedAt || cacheLookup.payload?.cacheStatus?.generatedAt,
+          qualityStatus: saved.payload?.cacheStatus?.qualityStatus || cacheLookup.payload?.cacheStatus?.qualityStatus,
+          provider: saved.payload?.cacheStatus?.provider || cacheLookup.payload?.cacheStatus?.provider,
+          model: saved.payload?.cacheStatus?.model || cacheLookup.payload?.cacheStatus?.model
         }), buildSectionStatusAfterSave({
           previous: sectionCacheLookup,
           savedSections

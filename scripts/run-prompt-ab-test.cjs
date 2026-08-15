@@ -28,8 +28,8 @@ const DISTRICTS = (process.env.PROMPT_AB_DISTRICTS || '강남구')
   .split(',')
   .map(item => item.trim())
   .filter(Boolean);
-const DRAFT_VERSION = process.env.PROMPT_AB_DRAFT_VERSION || 'district-screen-insight-v0.10-draft-sample3';
-const PROMPT_KEY = process.env.PROMPT_AB_PROMPT_KEY || 'district-screen-insight';
+const DRAFT_VERSION = process.env.PROMPT_AB_DRAFT_VERSION || 'district-summary-insight-v0.2-draft';
+const PROMPT_KEY = process.env.PROMPT_AB_PROMPT_KEY || 'district-summary-insight';
 const ARTIFACT_TYPE = process.env.PROMPT_AB_ARTIFACT_TYPE || 'districtInsight';
 const SECTION_KEY = process.env.PROMPT_AB_SECTION_KEY || 'districtInsight';
 
@@ -141,20 +141,22 @@ async function main() {
       districtData,
       cultureMetrics: {}
     });
-    const basePrompt = gatewayModule.buildDistrictScreenPrompt({ basePayload });
+    const basePrompt = gatewayModule.buildDistrictInsightPrompt({ basePayload });
     const currentOutput = await gatewayModule.generateDistrictScreenText({
       basePayload,
       route: modelPick.route,
       provider: modelPick.provider,
       model: modelPick.model,
-      promptOverride: basePrompt
+      sectionKeys: [],
+      insightPromptOverride: basePrompt
     });
     const draftOutput = await gatewayModule.generateDistrictScreenText({
       basePayload,
       route: modelPick.route,
       provider: modelPick.provider,
       model: modelPick.model,
-      promptOverride: buildDraftPrompt({
+      sectionKeys: [],
+      insightPromptOverride: buildDraftPrompt({
         basePrompt,
         draftPromptText: draft.row.prompt_text
       })

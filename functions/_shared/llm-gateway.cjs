@@ -147,6 +147,77 @@ function districtScreenResponseFormat() {
   };
 }
 
+const DISTRICT_SECTION_KEYS = ['population', 'culture', 'education', 'socialSafety'];
+
+function normalizeSectionKeys(sectionKeys = DISTRICT_SECTION_KEYS) {
+  const requested = Array.isArray(sectionKeys) ? sectionKeys : DISTRICT_SECTION_KEYS;
+  return DISTRICT_SECTION_KEYS.filter(sectionKey => requested.includes(sectionKey));
+}
+
+function districtSectionResponseFormat(sectionKeys = DISTRICT_SECTION_KEYS) {
+  const normalizedSectionKeys = normalizeSectionKeys(sectionKeys);
+  const properties = Object.fromEntries(normalizedSectionKeys.map(sectionKey => [
+    sectionKey,
+    sectionKey === 'socialSafety' ? socialSafetyOutputSchema() : sectionOutputSchema()
+  ]));
+
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: 'libscope_district_section_output',
+      strict: true,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['interpretations'],
+        properties: {
+          interpretations: {
+            type: 'object',
+            additionalProperties: false,
+            required: normalizedSectionKeys,
+            properties
+          }
+        }
+      }
+    }
+  };
+}
+
+function districtInsightResponseFormat() {
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: 'libscope_district_insight_output',
+      strict: true,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['insight'],
+        properties: {
+          insight: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['cards', 'cautions'],
+            properties: {
+              cards: {
+                type: 'array',
+                minItems: 3,
+                maxItems: 3,
+                items: insightCardSchema()
+              },
+              cautions: {
+                type: 'array',
+                maxItems: 2,
+                items: { type: 'string' }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
 function sentenceCount(text) {
   return String(text || '')
     .split(/[.!?。]|다\.|함\.|됨\.|필요\.|가능\./)
@@ -480,121 +551,51 @@ function pickProviderAndModel({ requestedProvider, requestedModel, recommendatio
 }
 
 function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
-  const evidenceMatrix = Object.fromEntries(
-    Object.entries(basePayload.interpretations || {}).map(([key, packet]) => [key, {
-      title: packet.title,
-      summary: packet.summary,
-      evidenceBullets: packet.keyFindings,
-      cautions: packet.cautions,
-      segments: packet.segments
-        ? Object.fromEntries(Object.entries(packet.segments).map(([segmentKey, segment]) => [segmentKey, {
-          title: segment.title,
-          summary: segment.summary,
-          evidenceBullets: segment.keyFindings,
-          cautions: segment.cautions
-        }]))
-        : undefined
-    }])
-  );
-  const compactInput = {
-    gu: basePayload.insight?.title,
-    snapshotKey: basePayload.snapshotKey,
-    outputStyle: basePayload.outputStyle,
-    analysisSignalVersion: basePayload.analysisSignalVersion,
-    analysisSignals: basePayload.analysisSignals,
-    sectionContracts: {
-      districtInsight: basePayload.sectionContracts?.districtInsight?.interpretationRules,
-      population: basePayload.sectionContracts?.population?.interpretationRules,
-      culture: basePayload.sectionContracts?.culture?.interpretationRules,
-      education: basePayload.sectionContracts?.education?.interpretationRules,
-      socialSafety: basePayload.sectionContracts?.socialSafety?.interpretationRules
-    },
-    evidenceMatrix,
-    screenInsightContract: {
-      labels: ['핵심 판단', '주의 지점', '실행 방향'],
-      audience: '대시보드 첫 화면에서 3문장만 읽는 도서관 정책 담당자',
-      noRawNumbers: true,
-      requiredAxisConnections: 2,
-      purpose: '자치구 보고서를 열기 전에 판단 흐름을 잡는 문장'
-    }
-  };
-
   return [
-    'LIBscope 자치구 지표 해석 하네스의 인사이트 문구를 생성한다.',
-    '역할: 지역 도서관 정책·서비스 판단을 돕는 분석관. 단순 통계 해설자가 아님.',
-    '목표: 화면 노출용 섹션별 해석문과 자치구 종합 인사이트 3개 카드 생성.',
-    '문체: 존대 금지, 보고서형 명사형 어미 우선.',
-    '안전: 입력 수치에 없는 숫자 생성 금지. 민감 지표는 원인 단정 금지. 접근성, 정보 도달성, 실행 처방 중심.',
-    '인사이트 정의: 최소 3개 지표축을 연결해 “이 데이터 조합은 무엇을 의미하는가”, “그래서 도서관/지역사회가 무엇을 해야 하는가”를 드러내는 판단문.',
-    '심화 기준: 자치구 고유 조건을 최소 2개 이상 결합해 “서비스 설계 단위가 어떻게 달라지는가”를 설명한다. 어느 자치구에도 붙일 수 있는 조언은 실패로 본다.',
-    '화면 상단 인사이트 3개 카드는 숫자 요약이 아니라 판단 근거와 운영 함의를 분리한 전문적 분석 문장이다.',
-    '섹션별 AI 패널은 긴 문단이 아니라 판단문, 근거-의미 항목, 유의사항 칩으로 읽히는 짧은 분석 블록이다.',
-    '출력은 JSON 객체 하나만 반환. Markdown 코드블럭 금지.',
+    buildDistrictSectionPrompt({ basePayload }),
     '',
-    '분석 절차:',
-    '0. 수치 계산, 분위, 평균 대비, 데이터 계보는 analysisSignals를 우선 신뢰. 모델이 새 계산을 만들지 않음.',
-    '1. evidenceMatrix와 analysisSignals의 수치를 그대로 근거로 삼되, 수치만 반복하지 않음.',
-    '2. 먼저 analysisSignals.notableSignals와 crossMetricTensions를 읽고 “특이점 → 긴장/불균형 → 분석 결론 → 실행 처방” 순서로 내부 판단.',
-    '3. 각 섹션마다 관찰(observation), 해석(meaning), 도서관 운영 처방(action)을 결합.',
-    '4. 사회안전망은 먼저 household, disability, foreign 세부 인사이트를 각각 작성한 뒤, socialSafety.summary/keyFindings에서 세 축을 종합.',
-    '4-1. socialSafety는 사회안전망 데이터만 요약하지 않는다. 반드시 population의 연령·정주/생활인구 조건, culture의 문화시설·도서관·무장애 조건 중 최소 2개를 함께 연결해 “안내 채널·공간·대면 지원·언어 지원을 어떻게 배치해야 하는가”를 처방한다.',
-    '4-2. education은 학교 수나 학교 목록만 요약하지 않는다. 반드시 population의 아동·청소년·생활인구 조건, culture의 문화시설·도서관·문화행사 조건 중 최소 2개를 함께 연결해 “시간대·홍보 채널·협력기관 역할·프로그램 장소를 어떻게 운영해야 하는가”를 처방한다.',
-    '5. 자치구 종합 인사이트는 population, socialSafety, culture, education 중 최소 3개 축을 연결.',
-    '6. “높다/낮다/많다/적다” 단독 표현 대신 서비스 접근성, 협력 자원, 정보 도달성, 공간/프로그램 기획 단위로 해석.',
-    '7. 결론은 “검토/확인/점검이 필요”로 끝내지 않는다. 분석이 충분한 경우 시간대, 채널, 공간, 협력기관, 프로그램 운영 중 최소 1개를 어떻게 바꿀지 처방한다.',
-    '8. 상단 카드 3개는 섹션별 해석을 압축하되, 명·개·건·%·가구·개교·개관 같은 숫자 표기를 쓰지 않음.',
-    '8-1. 작은 규모, 낮은 총량, 하위권 신호는 “확대보다/양보다” 같은 일반 비교로 쓰지 않는다. 반드시 좁은 운영 단위(시간대, 안내 채널, 공간, 협력기관, 방문·홍보 대상)의 배치·분리·우선순위 처방으로 바꾼다.',
-    '10. 섹션별 interpretations의 summary는 1문장 판단문으로 작성하고, keyFindings는 각각 “근거: ... / 의미: ...” 구조로 작성.',
-    '11. keyFindings의 근거에는 수치·단위·기준 또는 조건을 유지하고, 의미에는 접근성·협력·공간·프로그램·안내·정보 도달성 중 하나의 함의를 붙임.',
-    '12. dataLineage.fixedDatasets는 고정 참고값으로 해석하고, refreshableDatasets는 snapshot 갱신 시 재계산되는 값으로 분리해 표현.',
-    '',
-    '금지되는 출력:',
-    '- 입력에 들어온 placeholder/mock 문장을 그대로 복사하거나 부분 치환하는 방식.',
-    '- 아래 예시 문장을 그대로 복사하거나 같은 단어 배열로 재사용하는 방식.',
-    '- “A는 10명, B는 20개 확인”처럼 숫자만 이어 붙인 문장.',
-    '- 상단 카드에서 “65세 이상 00명”, “도서관 00개”처럼 수치를 직접 제시하는 방식.',
-    '- “규모 확인”, “수준 확인”, “항목 점검”처럼 판단 대상만 있고 의미가 약한 문장.',
-    '- “확인해야 함”, “검토가 필요함”, “점검해야 함”으로 끝나고 실제 운영 처방이 없는 문장.',
-    '- 상단 insight.cards text와 bullets에서 “확인”, “검토”, “점검”, “볼 필요”를 쓰는 방식. 상단 카드는 분석 방법이 아니라 실행 처방만 쓴다.',
-    '- “함께 봐야”, “함께 읽어야”, “기준으로 해석”처럼 분석 방법을 설명하는 문장. 모든 섹션은 “함께 보면/겹치므로/맞물리므로 → 무엇을 운영해야 함”으로 끝낸다.',
-    '- “어떤 기준으로 볼지”, “어떤 조건에서 판단할지”처럼 분석 방법을 설명할 뿐 무엇을 해야 하는지 말하지 않는 문장.',
-    '- “고령층, 1인가구, 장애, 외국인 구성”처럼 범용 지표명을 단순 열거하는 문장.',
-    '- “지원이 필요하다”처럼 원인이 없는 일반론.',
-    '- “도서관 서비스 개선 필요”처럼 어떤 지표 연결에서 나온 판단인지 알 수 없는 문장.',
-    '- “맞춤형 서비스 필요”, “접근성 강화 필요”, “협력 강화 필요”처럼 자치구 고유 조건 없이 붙는 범용 운영 문장.',
-    '- “대형 확대보다”, “양보다”, “확장보다”처럼 낮은 총량을 일반론적 절약/축소 프레임으로 처리하는 문장.',
-    '- education을 학교 수/학교 목록만으로 끝내는 문장.',
-    '- socialSafety를 수급률·가구·장애·외국인 구성만으로 끝내는 문장.',
-    '- 사회안전망 대상자 구성을 “도움이 필요한 집단”처럼 표현하고 인구·문화·도서관 접근성 맥락 없이 결론내는 문장.',
-    '- keyFindings를 2문장 이상의 긴 문단으로 작성하는 방식.',
-    '- summary에 여러 수치를 한꺼번에 넣어 사실상 지표 나열로 만드는 방식.',
-    '- 기관 수, 인구 규모, 수급률 등 단일 지표 하나만 근거로 정책 방향을 제시하는 문장.',
-    '- 대상자 집단을 지역 문제의 원인처럼 표현.',
-    '- “연결 실패가 생김”, “문제가 발생함”처럼 입력 지표만으로 확정 인과나 발생을 단정하는 문장. “가능성이 커짐”, “공백이 커질 수 있음”처럼 위험 표현으로 낮춘다.',
-    '- 입력에 없는 순위, 추세, 증가/감소, 인과관계 생성.',
-    '- analysisSignals에 없는 평균, 순위, 분위, 격차를 모델이 새로 계산하는 방식.',
-    '- fixed_dataset 값을 최신 API 값처럼 표현하거나 api_cached 값을 고정 조사값처럼 표현하는 방식.',
-    '- 상단 insight.cards bullets에 “고정값”, “갱신값”, “기준 차이”, “원인 단정”, “분리 해석”, “유의”, “주의”, “캐시”, “snapshot” 같은 내부 판단·품질관리 용어를 노출하는 방식.',
-    '',
-    '좋은 출력의 형태(구조만 참고, 문장 복사 금지):',
-    '- “[인구축의 구체 조건]과 [사회안전망축의 구체 조건]이 겹치므로 [도서관 서비스]는 [공간·프로그램·안내·협력 중 하나]를 대상별 접근성 기준으로 분리 운영해야 함.”',
-    '- “[문화시설/생활문화의 구체 조건]과 [교육/공공기관 조건]의 관계상 생활권 안에서 [도서관이 맡을 접점]이 비므로, [협력기관 역할/프로그램 장소/홍보 채널]을 우선 재배치해야 함.”',
-    '- “[외국인/장애/가구 중 실제 최상위 항목]이 [연령·생활권 조건]과 맞물리므로 언어, 이동, 디지털 안내, 대면 지원을 하나의 창구로 묶지 말고 [구체 채널]로 분리 제공해야 함.”',
-    '- “education: [학교급 조건]과 [아동·청소년/생활인구 조건], [문화시설·도서관 조건]을 함께 보면 [시간대/홍보 채널/협력기관 역할]이 갈라진다. 따라서 [프로그램 장소/홍보/협력]을 [구체 단위]로 운영해야 함.”',
-    '- “socialSafety: [가구/장애/외국인 조건]과 [연령·생활권 조건], [문화·도서관 접근성 조건]이 겹치므로 [안내 채널/공간/대면 지원/언어 지원]을 [구체 단위]로 분리 제공해야 함.”',
-    '',
-    '좋은 상단 카드의 형태(구조만 참고, 문장 복사 금지):',
-    '- “[생활인구/연령 조건]과 [접근성 조건]이 겹치므로 도서관은 [시간대·이동성·대면 안내 중 하나]를 분리 운영하고, [구체 대상]의 접점을 먼저 배치해야 함.”',
-    '- “[생활문화/무장애/시설 조건]과 [도서관/교육 조건]이 어긋나므로 도서관은 문화시설 대체가 아니라 [생활권 연계/보완 거점] 역할을 맡고 [협력기관/공간]을 재배치해야 함.”',
-    '- “[학교/도서관/공공기관의 실제 조건] 때문에 [권역·대상·프로그램 중 하나] 기준 협력 경로가 우선이다. 기관 분포를 따라 [홍보 채널/장소/시간대]를 나누어 운영해야 함.”',
-    '',
-    '반환 스키마:',
-    JSON.stringify({
-      interpretations: {
-        population: { summary: 'string', keyFindings: ['string'], cautions: ['string'] },
-        culture: { summary: 'string', keyFindings: ['string'], cautions: ['string'] },
-        education: { summary: 'string', keyFindings: ['string'], cautions: ['string'] },
-        socialSafety: {
+    '--- DISTRICT INSIGHT PROMPT ---',
+    buildDistrictInsightPrompt({ basePayload })
+  ].join('\n');
+}
+const COMMON_DISTRICT_PROMPT_RULES = [
+  '역할: 서울시 공공도서관 정책·서비스 판단을 돕는 분석관.',
+  '문체: 존대 없이 보고서형 명사형 어미를 우선 사용.',
+  '입력에 없는 숫자, 순위, 추세, 평균, 격차, 인과관계를 생성하지 않음.',
+  'analysisSignals의 계산 결과와 evidenceMatrix의 근거를 우선 신뢰하며 모델이 새 계산을 만들지 않음.',
+  '장애, 외국인, 수급자 등 민감 지표를 지역 문제의 원인으로 단정하지 않음.',
+  '일반적인 개선 필요로 끝내지 말고 시간대, 채널, 공간, 협력기관, 프로그램 중 실행 단위를 제시.',
+  '출력은 지정된 JSON 객체 하나만 반환하며 Markdown 코드블록을 사용하지 않음.'
+];
+
+function buildPromptEvidenceMatrix(interpretations = {}) {
+  return Object.fromEntries(Object.entries(interpretations).map(([key, packet]) => [key, {
+    title: packet.title,
+    summary: packet.summary,
+    evidenceBullets: packet.keyFindings,
+    cautions: packet.cautions,
+    segments: packet.segments
+      ? Object.fromEntries(Object.entries(packet.segments).map(([segmentKey, segment]) => [segmentKey, {
+        title: segment.title,
+        summary: segment.summary,
+        evidenceBullets: segment.keyFindings,
+        cautions: segment.cautions
+      }]))
+      : undefined
+  }]));
+}
+
+function buildDistrictSectionPrompt({ basePayload = {}, sectionKeys = DISTRICT_SECTION_KEYS } = {}) {
+  const normalizedSectionKeys = normalizeSectionKeys(sectionKeys);
+  const evidenceMatrix = buildPromptEvidenceMatrix(basePayload.interpretations || {});
+  const sectionContracts = Object.fromEntries(normalizedSectionKeys.map(sectionKey => [
+    sectionKey,
+    basePayload.sectionContracts?.[sectionKey]?.interpretationRules
+  ]));
+  const sectionShape = Object.fromEntries(normalizedSectionKeys.map(sectionKey => [
+    sectionKey,
+    sectionKey === 'socialSafety'
+      ? {
           summary: 'string',
           keyFindings: ['string'],
           cautions: ['string'],
@@ -604,7 +605,61 @@ function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
             foreign: { summary: 'string', keyFindings: ['string'], cautions: ['string'] }
           }
         }
-      },
+      : { summary: 'string', keyFindings: ['string'], cautions: ['string'] }
+  ]));
+
+  return [
+    'LIBscope 자치구 지표의 선택 섹션 해석문을 생성한다.',
+    ...COMMON_DISTRICT_PROMPT_RULES,
+    `생성 대상 섹션: ${normalizedSectionKeys.join(', ')}`,
+    '',
+    '섹션 출력 규칙:',
+    '- 각 summary는 1문장 판단문이며 수치 나열보다 판단축을 먼저 제시.',
+    '- 각 keyFindings는 2~4개이고 “근거: ... / 의미: ...” 구조를 사용.',
+    '- 근거에는 입력 수치·단위·조건을 유지하고 의미에는 도서관 운영 처방을 포함.',
+    '- cautions는 최대 2개이며 데이터 기준과 단정 금지 사항만 짧게 작성.',
+    '- population은 주민등록인구와 생활인구의 기준 차이를 구분.',
+    '- culture는 시설 공급과 인구 대비 접근성, 서울시 문화향유 참고값을 구분.',
+    '- education은 학교 조건과 population, culture 근거를 연결해 시간대·홍보·협력 역할을 처방.',
+    '- socialSafety는 household, disability, foreign을 먼저 분리하고 population, culture 근거와 연결해 채널·공간·대면·언어 지원을 처방.',
+    '- “확인·검토·점검 필요”, “접근성 강화 필요”, “맞춤형 서비스 필요” 같은 일반론 금지.',
+    '- 고정값·갱신값·snapshot 같은 내부 통제 용어는 cautions 밖에 노출하지 않음.',
+    '',
+    '반환 스키마:',
+    JSON.stringify({ interpretations: sectionShape }),
+    '',
+    '입력:',
+    JSON.stringify({
+      gu: basePayload.insight?.title,
+      snapshotKey: basePayload.snapshotKey,
+      outputStyle: basePayload.outputStyle,
+      analysisSignalVersion: basePayload.analysisSignalVersion,
+      analysisSignals: basePayload.analysisSignals,
+      sectionContracts,
+      evidenceMatrix
+    })
+  ].join('\n');
+}
+
+function buildDistrictInsightPrompt({ basePayload = {}, interpretations = basePayload.interpretations || {} } = {}) {
+  return [
+    'LIBscope 자치구 화면 상단에 노출할 종합 인사이트 카드 3개를 생성한다.',
+    ...COMMON_DISTRICT_PROMPT_RULES,
+    '대상: 자치구 상세 보고서를 열기 전에 세 문장만 읽는 도서관 정책 담당자.',
+    '',
+    '카드 출력 규칙:',
+    '- cards는 정확히 “핵심 판단”, “주의 지점”, “실행 방향” 순서의 3개.',
+    '- 각 text는 1~2문장, 60~160자이며 지표 관계 → 분석 결과 → 도서관 운영 처방 구조.',
+    '- 각 bullets는 2~4개, 항목당 18~80자의 사용자용 실행 요약.',
+    '- 각 카드는 서로 다른 지표 조합을 사용하고 최소 2개 지표 축을 연결.',
+    '- text와 bullets에 숫자·단위·퍼센트·순위를 직접 표시하지 않음.',
+    '- “확인·검토·점검·볼 필요” 대신 분리, 재배치, 편성, 설계, 운영, 제공, 연계, 우선 배정을 사용.',
+    '- “함께 보면”, 지표 3개 이상의 단순 열거, 어느 자치구에도 적용되는 범용 조언을 금지.',
+    '- 내부 데이터 품질 지침은 cautions에만 작성하고 cards 또는 bullets에 노출하지 않음.',
+    '- 입력된 섹션 해석을 요약하되 문장을 그대로 복사하지 않음.',
+    '',
+    '반환 스키마:',
+    JSON.stringify({
       insight: {
         cards: [
           { label: '핵심 판단', text: 'string', bullets: ['string'] },
@@ -615,42 +670,13 @@ function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
       }
     }),
     '',
-    '제약:',
-    '- 각 summary는 1문장, 70~120자 권장. 수치 나열 대신 판단축을 먼저 제시.',
-    '- 각 keyFindings는 2~4개이며, 반드시 “근거: ... / 의미: ...” 형식을 우선 사용.',
-    '- 각 keyFindings는 70~150자 권장. 한 항목 안에 지표 근거, 분석 결과, 도서관 운영 처방을 함께 포함.',
-    '- 각 cautions는 0~2개, 50자 안팎의 짧은 유의사항으로 작성.',
-    '- interpretations.socialSafety.segments.household는 가구 유형과 수급률/생활 지원 접점의 의미를 분리해 작성.',
-    '- interpretations.socialSafety.segments.disability는 장애 대분류와 이동·감각·정보 접근성 조건을 분리해 작성.',
-    '- interpretations.socialSafety.segments.foreign은 외국인 주민 유형과 등록외국인 국적을 같은 분모로 섞지 않고 언어·정보 도달성 관점으로 작성.',
-    '- interpretations.socialSafety.summary와 keyFindings는 household, disability, foreign 세 인사이트를 종합한 판단이어야 하며, 어느 한 축만 반복하지 않음.',
-    '- interpretations.education.summary와 keyFindings는 교육 데이터만 보지 말고 population과 culture 중 최소 2개 근거를 함께 반영.',
-    '- interpretations.education의 의미 문장은 학교급/목록 조건을 시간대, 홍보 채널, 협력기관 역할, 프로그램 장소 중 하나의 실행 처방과 연결.',
-    '- interpretations.socialSafety.summary와 keyFindings는 socialSafety 데이터만 보지 말고 population과 culture 중 최소 2개 근거를 함께 반영.',
-    '- interpretations.socialSafety의 의미 문장은 가구/장애/외국인 조건을 안내 채널, 공간 접근성, 대면 지원, 언어 지원, 이동 보조 중 하나의 실행 처방과 연결.',
-    '- insight.cards는 정확히 3개, 각 text는 1~2문장.',
-    '- insight.cards의 bullets는 2~4개이며, 다양한 섹션의 부분 인사이트를 짧게 압축한 사용자용 핵심 불릿.',
-    '- insight.cards label은 정확히 “핵심 판단”, “주의 지점”, “실행 방향” 순서로 작성.',
-    '- insight.cards text와 bullets에는 숫자, 단위, 퍼센트, 순위 표현을 쓰지 않음.',
-    '- insight.cards text와 bullets에는 “확인”, “검토”, “점검”, “볼 필요”를 쓰지 않음. 대신 분리, 재배치, 편성, 설계, 운영, 제공, 연계, 우선 배정으로 작성.',
-    '- insight.cards text는 카드마다 60자 이상 160자 이하로 작성.',
-    '- insight.cards bullets는 항목당 18자 이상 80자 이하로 작성.',
-    '- insight.cards text에는 evidenceMatrix에 등장하는 자치구 고유 키워드 또는 조건을 카드마다 3개 이상 포함.',
-    '- 낮은 총량·하위권·공란·결측 조건을 다룰 때는 “운영 단위를 좁히는 이유”로만 사용하고, 부족하므로 확대/강화/개선이 필요하다는 결론을 쓰지 않음.',
-    '- insight.cards 3개는 서로 다른 지표 조합을 사용하며, 어느 자치구에도 그대로 쓸 수 있는 범용 문장을 피함.',
-    '- insight.cards[0]은 여러 지표의 연결로 핵심 판단축과 도서관 운영상 의미를 제시.',
-    '- insight.cards[1]은 내부 유의사항이 아니라 사용자가 볼 수 있는 서비스 공백, 접근성 공백, 연결 실패 가능성을 제시.',
-    '- insight.cards[2]은 도서관 서비스·협력·공간/프로그램을 어떻게 바꿀지 실행 방향을 제시.',
-    '- 각 insight.cards text는 “지표 간 관계 + 분석 결과 + 도서관 운영 처방” 구조로 작성.',
-    '- 고정값/갱신값/기준 차이/원인 단정 금지 같은 내부 통제 문구는 섹션 cautions에만 사용하고, insight.cards bullets에는 쓰지 않음.',
-    '- evidenceRefs는 반환하지 말고 입력의 근거 구조를 보존한다고 가정.',
-    '- 모든 출력 문장에는 분석 결과 또는 실행 처방 동사(의미, 시사함, 분리, 재배치, 편성, 설계, 운영, 전환, 연계, 제공)를 포함.',
-    '- 실행 처방은 단정해도 되지만 원인·결과 발생은 단정하지 않는다. “실패가 생김” 대신 “실패 가능성이 커짐”, “공백이 커질 수 있음”으로 표현.',
-    '- interpretations.education과 interpretations.socialSafety에서도 “함께 봐야/읽어야/검토”로 멈추지 말고 시간대, 채널, 공간, 협력기관, 대면/언어/이동 지원 중 무엇을 어떻게 운영할지 적는다.',
-    '- JSON 작성 전 자체 점검: insight.cards 3개 모두 숫자가 없고, 2개 이상 지표 축을 연결하며, 2개 이상 핵심 불릿을 포함해야 함.',
-    '',
     '입력:',
-    JSON.stringify(compactInput)
+    JSON.stringify({
+      gu: basePayload.insight?.title,
+      snapshotKey: basePayload.snapshotKey,
+      analysisSignals: basePayload.analysisSignals,
+      interpretations: buildPromptEvidenceMatrix(interpretations)
+    })
   ].join('\n');
 }
 
@@ -664,7 +690,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_M
   }
 }
 
-async function callOpenAiJson({ model, prompt, route = 'direct' }) {
+async function callOpenAiJson({ model, prompt, route = 'direct', responseFormat = districtScreenResponseFormat() }) {
   const useGateway = route === 'gateway';
   const apiKey = useGateway
     ? getEnv('OPENAI_API_KEY') || getEnv('NETLIFY_AI_GATEWAY_KEY')
@@ -685,7 +711,7 @@ async function callOpenAiJson({ model, prompt, route = 'direct' }) {
       { role: 'system', content: 'You return only valid JSON for a Korean public-sector analytics dashboard.' },
       { role: 'user', content: prompt }
     ],
-    response_format: districtScreenResponseFormat()
+    response_format: responseFormat
   };
 
   let response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
@@ -789,10 +815,10 @@ async function callAnthropicJson({ model, prompt, route = 'direct' }) {
   return parseJsonFromText(text);
 }
 
-async function callProviderJson({ route, provider, model, prompt }) {
+async function callProviderJson({ route, provider, model, prompt, responseFormat }) {
   if (provider === 'gemini') return callGeminiJson({ model, prompt, route });
   if (provider === 'anthropic') return callAnthropicJson({ model, prompt, route });
-  return callOpenAiJson({ model, prompt, route });
+  return callOpenAiJson({ model, prompt, route, responseFormat });
 }
 
 function shouldRetryForQuality(quality = {}) {
@@ -844,10 +870,48 @@ async function generateDistrictScreenText({
   provider,
   model,
   promptOverride,
+  sectionPromptOverride,
+  insightPromptOverride,
+  sectionKeys = DISTRICT_SECTION_KEYS,
   maxQualityRetries = Number.parseInt(getEnv('LLM_QUALITY_RETRY_COUNT') || '1', 10)
 }) {
-  const prompt = promptOverride || buildDistrictScreenPrompt({ basePayload });
-  let output = await callProviderJson({ route, provider, model, prompt });
+  const normalizedSectionKeys = normalizeSectionKeys(sectionKeys);
+  let generatedInterpretations = {};
+
+  if (normalizedSectionKeys.length > 0) {
+    const sectionPrompt = sectionPromptOverride || buildDistrictSectionPrompt({
+      basePayload,
+      sectionKeys: normalizedSectionKeys
+    });
+    const sectionOutput = await callProviderJson({
+      route,
+      provider,
+      model,
+      prompt: sectionPrompt,
+      responseFormat: districtSectionResponseFormat(normalizedSectionKeys)
+    });
+    generatedInterpretations = sectionOutput.interpretations || {};
+  }
+
+  const interpretations = {
+    ...(basePayload.interpretations || {}),
+    ...generatedInterpretations
+  };
+  const insightPrompt = insightPromptOverride || promptOverride || buildDistrictInsightPrompt({
+    basePayload,
+    interpretations
+  });
+  const insightOutput = await callProviderJson({
+    route,
+    provider,
+    model,
+    prompt: insightPrompt,
+    responseFormat: districtInsightResponseFormat()
+  });
+  let output = {
+    interpretations,
+    insight: insightOutput.insight
+  };
   let quality = assessInsightQuality(output);
 
   const retryCount = Number.isFinite(maxQualityRetries) ? Math.max(0, maxQualityRetries) : 0;
@@ -858,7 +922,8 @@ async function generateDistrictScreenText({
       route,
       provider,
       model,
-      prompt: buildScreenCardRepairPrompt({ prompt, generatedText: previousOutput, quality: previousQuality })
+      prompt: buildScreenCardRepairPrompt({ prompt: insightPrompt, generatedText: previousOutput, quality: previousQuality }),
+      responseFormat: districtInsightResponseFormat()
     });
     const candidateOutput = {
       ...previousOutput,
@@ -884,6 +949,8 @@ module.exports = {
   findWeakInsightPatternWarnings,
   buildScreenCardRepairPrompt,
   buildDistrictScreenPrompt,
+  buildDistrictSectionPrompt,
+  buildDistrictInsightPrompt,
   pickProviderAndModel,
   generateDistrictScreenText
 };

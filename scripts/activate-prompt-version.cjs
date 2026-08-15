@@ -25,7 +25,7 @@ const {
 
 const args = new Set(process.argv.slice(2));
 const APPROVE = args.has('--approve');
-const PROMPT_KEY = process.env.ACTIVATE_PROMPT_KEY || 'district-screen-insight';
+const PROMPT_KEY = process.env.ACTIVATE_PROMPT_KEY || 'district-summary-insight';
 const ARTIFACT_TYPE = process.env.ACTIVATE_ARTIFACT_TYPE || 'districtInsight';
 const SECTION_KEY = process.env.ACTIVATE_SECTION_KEY || ARTIFACT_TYPE;
 const PROMPT_VERSION = process.env.ACTIVATE_PROMPT_VERSION;

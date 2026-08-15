@@ -36,8 +36,8 @@ const DRY_RUN = args.has('--dry-run') || process.env.AUTO_IMPROVE_DRAFT_DRY_RUN 
 const SAVE = args.has('--save') || process.env.AUTO_IMPROVE_DRAFT_SAVE === '1';
 const ARTIFACT_TYPE = process.env.AUTO_IMPROVE_ARTIFACT_TYPE || 'districtInsight';
 const SECTION_KEY = process.env.AUTO_IMPROVE_SECTION_KEY || ARTIFACT_TYPE;
-const PROMPT_KEY = process.env.AUTO_IMPROVE_PROMPT_KEY || 'district-screen-insight';
-const CURRENT_PROMPT_VERSION = process.env.AUTO_IMPROVE_CURRENT_PROMPT_VERSION || 'district-screen-insight-v0.8';
+const PROMPT_KEY = process.env.AUTO_IMPROVE_PROMPT_KEY || 'district-summary-insight';
+const CURRENT_PROMPT_VERSION = process.env.AUTO_IMPROVE_CURRENT_PROMPT_VERSION || 'district-summary-insight-v0.1';
 const CURRENT_PROMPT_DB_VERSION = process.env.AUTO_IMPROVE_CURRENT_PROMPT_DB_VERSION || '';
 const ADDITIONAL_GUIDANCE = process.env.AUTO_IMPROVE_ADDITIONAL_GUIDANCE || '';
 const FEEDBACK_LIMIT = Math.max(1, parseInt(process.env.AUTO_IMPROVE_FEEDBACK_LIMIT || '25', 10));
@@ -58,10 +58,15 @@ async function readCurrentPromptText() {
 
   const gatewayPath = path.resolve(process.cwd(), 'functions/_shared/llm-gateway.cjs');
   const source = fs.readFileSync(gatewayPath, 'utf-8');
-  const marker = 'function buildDistrictScreenPrompt';
+  const marker = SECTION_KEY === 'districtInsight'
+    ? 'function buildDistrictInsightPrompt'
+    : 'function buildDistrictSectionPrompt';
   const start = source.indexOf(marker);
   if (start < 0) return source.slice(0, 20000);
-  const end = source.indexOf('\nasync function fetchWithTimeout', start);
+  const endMarker = SECTION_KEY === 'districtInsight'
+    ? '\nasync function fetchWithTimeout'
+    : '\nfunction buildDistrictInsightPrompt';
+  const end = source.indexOf(endMarker, start);
   return source.slice(start, end > start ? end : start + 24000);
 }
 
