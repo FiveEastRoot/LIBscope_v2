@@ -852,6 +852,7 @@ function buildScreenCardRepairPrompt({ prompt, generatedText, quality }) {
     '- 지표 관계는 불일치, 집중, 보완, 접근 공백, 조정 부담 중 하나를 자연어로 풀어 쓴다. 이 단어를 표제처럼 노출하지 말고 문장 안에 녹인다.',
     '- 도서관 운영 판단 단위는 시간대, 안내 채널, 공간, 협력기관, 방문·홍보 대상 중 하나로 구체화한다.',
     '- insight.cards and bullets must not use 확인, 검토, 점검, 볼 필요, 살펴야, 봐야.',
+    '- insight.cards and bullets must not use 단정, 주의, 유의, 고정값, 갱신값, 기준 차이, 캐시, or snapshot. Do not explain internal interpretation policy to users.',
     '- Avoid repeating 필요함 or 검토 필요; use concrete Korean decision verbs such as 분리, 재배치, 편성, 설계, 운영, 제공, 연계, 우선 배정.',
     '- Do not output English scaffold words such as mismatch, concentration, complementarity, access gap, coordination burden, time slot, partner, or outreach segment.',
     '- A strong card text has two compact sentences: first sentence names the local relation; second sentence names the library decision unit and what must be checked before action.',

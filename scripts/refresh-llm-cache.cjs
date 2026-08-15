@@ -11,6 +11,7 @@ const PROVIDER = process.env.LLM_REFRESH_PROVIDER || 'direct-openai';
 const MODEL = process.env.LLM_REFRESH_MODEL || '';
 const FORCE_GENERATE = process.env.LLM_REFRESH_FORCE_GENERATE === '1';
 const INSIGHT_ONLY = process.env.LLM_REFRESH_INSIGHT_ONLY === '1';
+const QUALITY_RETRIES = process.env.LLM_REFRESH_QUALITY_RETRIES === '1' ? 1 : 0;
 const SOURCE_FORCE_REFRESH = process.env.LLM_SOURCE_FORCE_REFRESH === '1';
 const LIMIT = Math.max(0, parseInt(process.env.LLM_REFRESH_LIMIT || '0', 10));
 
@@ -54,6 +55,7 @@ async function refreshDistrictLlmCache(gu) {
     model: MODEL || undefined,
     forceGenerate: FORCE_GENERATE,
     regenerateInsightOnly: INSIGHT_ONLY,
+    qualityRetries: QUALITY_RETRIES,
     districtData,
     cultureMetrics: {}
   }, {
@@ -128,6 +130,7 @@ async function main() {
   console.log(`Provider: ${PROVIDER}`);
   console.log(`Model: ${MODEL || 'route default'}`);
   console.log(`Insight only: ${INSIGHT_ONLY ? 'yes' : 'no'}`);
+  console.log(`Quality repair retries: ${QUALITY_RETRIES}`);
 
   const { failCount, skipCount } = await runQueue(districts);
   console.log(`완료: ${districts.length - failCount - skipCount} 성공 / ${skipCount} 스킵 / ${failCount} 실패`);

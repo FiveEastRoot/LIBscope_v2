@@ -189,6 +189,7 @@ export default async function llmHarness(request) {
     const forceGenerate = Boolean(body.forceGenerate);
     const regenerateSections = normalizeRegenerateSections(body.regenerateSections);
     const regenerateInsightOnly = Boolean(body.regenerateInsightOnly);
+    const qualityRetries = body.qualityRetries === 1 ? 1 : 0;
 
     if (type !== 'district_screen') {
       return jsonResponse({ ok: false, error: `지원하지 않는 type입니다: ${type}` }, 400);
@@ -296,8 +297,8 @@ export default async function llmHarness(request) {
           : regenerateSections.length > 0
             ? regenerateSections
             : SECTION_CACHE_KEYS,
-        // Netlify must finish one cache generation within the synchronous function limit.
-        maxQualityRetries: 0
+        // Default stays at zero; one repair pass is allowed only for an explicit manual retry.
+        maxQualityRetries: qualityRetries
       });
       const generatedCardsValidation = validateGeneratedInsightCards(generatedText);
       if (!generatedCardsValidation.ok) {
