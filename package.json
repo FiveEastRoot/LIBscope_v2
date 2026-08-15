@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "netlify dev",
-    "dev:vite": "vite",
+    "dev:vite": "vite --port 5175 --strictPort",
     "build:function-data": "node scripts/build-static-function-data.cjs",
     "build": "vite build",
     "refresh:insight-cache": "node scripts/refresh-insight-cache.cjs",
