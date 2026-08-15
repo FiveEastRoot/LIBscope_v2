@@ -35,7 +35,7 @@ const {
 } = cacheModule;
 
 const SECTION_PROMPT_VERSION = 'district-section-interpretation-v0.1';
-const INSIGHT_PROMPT_VERSION = 'district-summary-insight-v0.1';
+const INSIGHT_PROMPT_VERSION = 'district-summary-insight-v0.2';
 const PROMPT_VERSION = `${SECTION_PROMPT_VERSION}+${INSIGHT_PROMPT_VERSION}`;
 const SECTION_CACHE_KEYS = ['population', 'culture', 'education', 'socialSafety'];
 
@@ -188,6 +188,7 @@ export default async function llmHarness(request) {
     const requestedProvider = body.provider || body.llmProvider || env.LLM_PROVIDER || 'cache';
     const forceGenerate = Boolean(body.forceGenerate);
     const regenerateSections = normalizeRegenerateSections(body.regenerateSections);
+    const regenerateInsightOnly = Boolean(body.regenerateInsightOnly);
 
     if (type !== 'district_screen') {
       return jsonResponse({ ok: false, error: `지원하지 않는 type입니다: ${type}` }, 400);
@@ -282,12 +283,19 @@ export default async function llmHarness(request) {
 
     try {
       const generationBasePayload = applyCachedInterpretations(basePayload, sectionCacheLookup.interpretations);
+      if (regenerateInsightOnly && !sectionCacheLookup.complete) {
+        throw new Error('종합 카드만 재생성하려면 네 섹션 캐시가 모두 필요합니다.');
+      }
       const generatedText = await generateDistrictScreenText({
         basePayload: generationBasePayload,
         route: modelPick.route,
         provider: modelPick.provider,
         model: modelPick.model,
-        sectionKeys: regenerateSections.length > 0 ? regenerateSections : SECTION_CACHE_KEYS,
+        sectionKeys: regenerateInsightOnly
+          ? []
+          : regenerateSections.length > 0
+            ? regenerateSections
+            : SECTION_CACHE_KEYS,
         // Netlify must finish one cache generation within the synchronous function limit.
         maxQualityRetries: 0
       });
@@ -317,7 +325,7 @@ export default async function llmHarness(request) {
           gatewayReadiness: getGatewayReadiness()
         }
       });
-      const canSaveDistrictInsight = regenerateSections.length === 0 || SECTION_CACHE_KEYS.every(
+      const canSaveDistrictInsight = regenerateInsightOnly || regenerateSections.length === 0 || SECTION_CACHE_KEYS.every(
         sectionKey => regenerateSections.includes(sectionKey) || Boolean(sectionCacheLookup.interpretations?.[sectionKey])
       );
       const saved = canSaveDistrictInsight
@@ -333,19 +341,30 @@ export default async function llmHarness(request) {
             qualityErrors: insightQuality.warnings || []
           })
         : { saved: false, payload: mergedPayload };
-      const sectionSaveKeys = regenerateSections.length > 0 ? regenerateSections : SECTION_CACHE_KEYS;
-      const savedSections = await saveCachedSectionInterpretations({
-        payload: mergedPayload,
-        districtData,
-        cultureMetrics,
-        promptVersion: SECTION_PROMPT_VERSION,
-        outputSchemaVersion: CONTRACT_VERSION,
-        modelRegistryVersion: MODEL_REGISTRY_VERSION,
-        aiMeta: mergedPayload.aiMeta,
-        qualityStatus: insightQuality.passed ? 'passed' : 'needs_review',
-        qualityErrors: insightQuality.warnings || [],
-        sectionKeys: sectionSaveKeys
-      });
+      const sectionSaveKeys = regenerateInsightOnly
+        ? []
+        : regenerateSections.length > 0
+          ? regenerateSections
+          : SECTION_CACHE_KEYS;
+      const savedSections = sectionSaveKeys.length > 0
+        ? await saveCachedSectionInterpretations({
+            payload: mergedPayload,
+            districtData,
+            cultureMetrics,
+            promptVersion: SECTION_PROMPT_VERSION,
+            outputSchemaVersion: CONTRACT_VERSION,
+            modelRegistryVersion: MODEL_REGISTRY_VERSION,
+            aiMeta: mergedPayload.aiMeta,
+            qualityStatus: insightQuality.passed ? 'passed' : 'needs_review',
+            qualityErrors: insightQuality.warnings || [],
+            sectionKeys: sectionSaveKeys
+          })
+        : {
+            saved: false,
+            complete: sectionCacheLookup.complete,
+            sectionKeys: sectionCacheLookup.sectionKeys || [],
+            results: []
+          };
 
       if (regenerateSections.length > 0) {
         const payloadWithCachedSections = applyCachedInterpretations(basePayload, sectionCacheLookup.interpretations);
@@ -385,10 +404,14 @@ export default async function llmHarness(request) {
       }
 
       return jsonResponse(withSectionCacheStatus(saved.payload, {
-        hit: savedSections.saved,
+        hit: savedSections.saved || Boolean(sectionCacheLookup.hit),
         complete: savedSections.complete,
         available: true,
-        reason: savedSections.complete ? 'section_cache_saved' : 'section_cache_partial',
+        reason: regenerateInsightOnly
+          ? 'section_cache_reused'
+          : savedSections.complete
+            ? 'section_cache_saved'
+            : 'section_cache_partial',
         sectionKeys: savedSections.sectionKeys,
         results: savedSections.results
       }));

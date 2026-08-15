@@ -9,6 +9,7 @@ const CONCURRENCY = Math.max(1, parseInt(process.env.LLM_REFRESH_CONCURRENCY || 
 const SLEEP_MS = Math.max(0, parseInt(process.env.LLM_REFRESH_SLEEP_MS || '500', 10));
 const PROVIDER = process.env.LLM_REFRESH_PROVIDER || 'direct-openai';
 const FORCE_GENERATE = process.env.LLM_REFRESH_FORCE_GENERATE === '1';
+const INSIGHT_ONLY = process.env.LLM_REFRESH_INSIGHT_ONLY === '1';
 const SOURCE_FORCE_REFRESH = process.env.LLM_SOURCE_FORCE_REFRESH === '1';
 const LIMIT = Math.max(0, parseInt(process.env.LLM_REFRESH_LIMIT || '0', 10));
 
@@ -43,6 +44,7 @@ async function refreshDistrictLlmCache(gu) {
     type: 'district_screen',
     provider: PROVIDER,
     forceGenerate: FORCE_GENERATE,
+    regenerateInsightOnly: INSIGHT_ONLY,
     districtData,
     cultureMetrics: {}
   }, {
@@ -111,6 +113,7 @@ async function main() {
   console.log(`Insight API: ${INSIGHT_API_BASE_URL}`);
   console.log(`LLM harness: ${LLM_HARNESS_BASE_URL}`);
   console.log(`Provider: ${PROVIDER}`);
+  console.log(`Insight only: ${INSIGHT_ONLY ? 'yes' : 'no'}`);
 
   const { failCount, skipCount } = await runQueue(districts);
   console.log(`완료: ${districts.length - failCount - skipCount} 성공 / ${skipCount} 스킵 / ${failCount} 실패`);
