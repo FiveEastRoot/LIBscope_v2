@@ -19,7 +19,8 @@ import {
   MapPinned,
   Sparkles,
   FileText,
-  Download
+  Download,
+  Search
 } from 'lucide-react';
 import libraryData from '../library_dong_mapping.json';
 import MetricInterpretationPanel from './components/MetricInterpretationPanel';
@@ -50,7 +51,7 @@ import { getModelRecommendationBadges } from './utils/modelBadges';
 // 서울시 25개 자치구 목록 정렬
 const guList = [...new Set(libraryData.libraries.map(lib => lib.gu))].sort();
 
-const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY || '05b872ee85af3352573dc4c52b709ddd';
+const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY || '';
 const KAKAO_SDK_SCRIPT_ID = 'kakao-map-sdk';
 let kakaoMapSdkPromise = null;
 
@@ -61,6 +62,10 @@ const loadKakaoMapSdk = () => {
 
   if (kakaoMapSdkPromise) {
     return kakaoMapSdkPromise;
+  }
+
+  if (!KAKAO_JS_KEY) {
+    return Promise.reject(new Error('카카오 지도 JavaScript 키가 설정되지 않았습니다.'));
   }
 
   kakaoMapSdkPromise = new Promise((resolve, reject) => {
@@ -113,6 +118,11 @@ function App() {
   const [selectedGu, setSelectedGu] = useState('강남구');
   const [selectedLibrary, setSelectedLibrary] = useState('');
   const [librariesInGu, setLibrariesInGu] = useState([]);
+  const [libraryTargetMode, setLibraryTargetMode] = useState('library');
+  const [addressQuery, setAddressQuery] = useState('');
+  const [resolvedAddress, setResolvedAddress] = useState('');
+  const [addressSearching, setAddressSearching] = useState(false);
+  const [addressError, setAddressError] = useState(null);
   const [socialSafetyView, setSocialSafetyView] = useState('household');
   const [cultureReferenceView, setCultureReferenceView] = useState('general');
   const [educationCategory, setEducationCategory] = useState('elementary');
@@ -188,19 +198,106 @@ function App() {
     }
   };
 
+  const fetchLocationData = async ({ guName, lat, lng, address }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await axios.get(`/api/insight-api`, {
+        params: { type: 'location', gu: guName, lat, lng }
+      });
+      setLibraryDataDetail({
+        ...res.data,
+        address,
+        targetLabel: '입력 위치'
+      });
+      setResolvedAddress(address);
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.error || '입력 위치 데이터를 불러오는 데 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddressAnalysis = async (event) => {
+    event.preventDefault();
+    const query = addressQuery.trim();
+    if (!query) {
+      setAddressError('분석할 서울시 주소를 입력하세요.');
+      return;
+    }
+
+    setAddressSearching(true);
+    setAddressError(null);
+    setError(null);
+    setLibraryDataDetail(null);
+    setResolvedAddress('');
+    try {
+      const kakao = await loadKakaoMapSdk();
+      if (!kakao.maps.services?.Geocoder) {
+        throw new Error('주소 검색 서비스를 불러오지 못했습니다.');
+      }
+
+      const geocoder = new kakao.maps.services.Geocoder();
+      const results = await new Promise((resolve, reject) => {
+        geocoder.addressSearch(query, (items, status) => {
+          if (status === kakao.maps.services.Status.OK && items.length > 0) {
+            resolve(items);
+            return;
+          }
+          if (status === kakao.maps.services.Status.ZERO_RESULT) {
+            reject(new Error('주소를 찾을 수 없습니다. 도로명 또는 지번 주소를 확인하세요.'));
+            return;
+          }
+          reject(new Error('주소 검색 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.'));
+        });
+      });
+
+      const match = results[0];
+      const addressInfo = match.road_address || match.address;
+      const guName = addressInfo?.region_2depth_name?.trim();
+      const normalizedAddress = match.road_address?.address_name || match.address?.address_name || query;
+      const lat = Number.parseFloat(match.y);
+      const lng = Number.parseFloat(match.x);
+
+      if (!guList.includes(guName)) {
+        throw new Error('서울시 25개 자치구에 해당하는 주소만 분석할 수 있습니다.');
+      }
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        throw new Error('주소의 좌표를 확인할 수 없습니다.');
+      }
+
+      setSelectedGu(guName);
+      await fetchLocationData({ guName, lat, lng, address: normalizedAddress });
+    } catch (err) {
+      console.error(err);
+      setAddressError(err.message || '주소 분석에 실패했습니다.');
+    } finally {
+      setAddressSearching(false);
+    }
+  };
+
+  const changeLibraryTargetMode = (mode) => {
+    setLibraryTargetMode(mode);
+    setLibraryDataDetail(null);
+    setResolvedAddress('');
+    setAddressError(null);
+    setError(null);
+  };
+
   // 탭 또는 셀렉트박스 변경 시 데이터 갱신 트리거
   useEffect(() => {
     if (activeTab === 'district') {
       fetchDistrictData(selectedGu);
-    } else if (activeTab === 'library' && selectedLibrary) {
+    } else if (activeTab === 'library' && libraryTargetMode === 'library' && selectedLibrary) {
       fetchLibraryData(selectedGu, selectedLibrary);
     }
-  }, [activeTab, selectedGu, selectedLibrary]);
+  }, [activeTab, selectedGu, selectedLibrary, libraryTargetMode]);
 
   useEffect(() => {
     setPublicPlaceCategory('all');
     setPublicPlacePage(0);
-  }, [selectedLibrary]);
+  }, [selectedLibrary, libraryTargetMode, resolvedAddress]);
 
   useEffect(() => {
     setPublicPlacePage(0);
@@ -650,17 +747,66 @@ function App() {
             </div>
 
             {activeTab === 'library' && (
-              <div className="flex flex-col">
-                <label className="text-xs font-bold text-slate-400 mb-1">도서관 선택</label>
-                <select
-                  value={selectedLibrary}
-                  onChange={(e) => setSelectedLibrary(e.target.value)}
-                  className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                >
-                  {librariesInGu.map(lib => (
-                    <option key={lib} value={lib}>{lib}</option>
-                  ))}
-                </select>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="flex flex-col">
+                  <label className="text-xs font-bold text-slate-400 mb-1">기준 위치</label>
+                  <div className="flex rounded-xl border border-slate-300 bg-slate-50 p-1">
+                    <button
+                      type="button"
+                      onClick={() => changeLibraryTargetMode('library')}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition-colors ${libraryTargetMode === 'library' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      도서관 선택
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => changeLibraryTargetMode('address')}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition-colors ${libraryTargetMode === 'address' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      주소 입력
+                    </button>
+                  </div>
+                </div>
+
+                {libraryTargetMode === 'library' ? (
+                  <div className="flex flex-col">
+                    <label className="text-xs font-bold text-slate-400 mb-1">도서관 선택</label>
+                    <select
+                      value={selectedLibrary}
+                      onChange={(e) => setSelectedLibrary(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-64"
+                    >
+                      {librariesInGu.map(lib => (
+                        <option key={lib} value={lib}>{lib}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <form onSubmit={handleAddressAnalysis} className="flex min-w-0 flex-1 flex-col">
+                    <label htmlFor="library-address" className="text-xs font-bold text-slate-400 mb-1">서울시 도로명·지번 주소</label>
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                      <input
+                        id="library-address"
+                        type="text"
+                        value={addressQuery}
+                        onChange={(event) => setAddressQuery(event.target.value)}
+                        maxLength={160}
+                        placeholder="예: 서울 노원구 노원로34길 43"
+                        className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-72"
+                      />
+                      <button
+                        type="submit"
+                        disabled={addressSearching || loading || !mapLoaded}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-sm font-extrabold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Search size={15} />
+                        {addressSearching ? '주소 확인 중' : '주소로 분석'}
+                      </button>
+                    </div>
+                    {addressError && <p className="mt-1 text-xs font-bold text-rose-600">{addressError}</p>}
+                    {!addressError && mapError && <p className="mt-1 text-xs font-bold text-rose-600">{mapError}</p>}
+                  </form>
+                )}
               </div>
             )}
           </div>
@@ -669,10 +815,16 @@ function App() {
             <div className="flex items-center justify-start md:justify-end gap-1">
               <MapPin className="text-blue-500" size={18} />
               <span>선택 지역: 서울특별시 {selectedGu}</span>
-              {activeTab === 'library' && selectedLibrary && (
+              {activeTab === 'library' && libraryTargetMode === 'library' && selectedLibrary && (
                 <>
                   <ChevronRight size={16} />
                   <span className="text-blue-600 font-bold">{selectedLibrary}</span>
+                </>
+              )}
+              {activeTab === 'library' && libraryTargetMode === 'address' && resolvedAddress && (
+                <>
+                  <ChevronRight size={16} />
+                  <span className="text-blue-600 font-bold">{resolvedAddress}</span>
                 </>
               )}
             </div>
