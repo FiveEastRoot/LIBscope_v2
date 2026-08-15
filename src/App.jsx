@@ -343,7 +343,7 @@ function App() {
 
       const { lat, lng } = libraryDataDetail.coordinates || {};
       if (!lat || !lng) {
-        throw new Error('도서관 좌표 정보가 올바르지 않습니다.');
+        throw new Error('기준 위치 좌표 정보가 올바르지 않습니다.');
       }
 
       const container = mapContainerRef.current;
@@ -368,7 +368,7 @@ function App() {
       const libraryMarker = new window.kakao.maps.Marker({
         position: options.center,
         map: map,
-        title: libraryDataDetail.library
+        title: libraryDataDetail.targetLabel || libraryDataDetail.library
       });
       markersRef.current.push(libraryMarker);
 
@@ -482,6 +482,9 @@ function App() {
 
   const activeDistrictPopulation = districtData ? getPopulationByMode(districtData.population) : null;
   const activeLibraryPopulation = libraryDataDetail ? getPopulationByMode(libraryDataDetail.demographics) : null;
+  const isAddressTarget = libraryDataDetail?.targetType === 'address';
+  const libraryTargetName = libraryDataDetail?.targetLabel || libraryDataDetail?.library || '기준 위치';
+  const distanceOriginLabel = isAddressTarget ? '기준 위치' : '도서관';
   const selectedCultureMetrics = useMemo(
     () => cultureMetricsRows.find(row => row.gu === selectedGu),
     [selectedGu]
@@ -733,18 +736,20 @@ function App() {
         {/* 상단 필터 컨트롤러 */}
         <section className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full md:w-auto">
-            <div className="flex flex-col">
-              <label className="text-xs font-bold text-slate-400 mb-1">자치구 선택</label>
-              <select
-                value={selectedGu}
-                onChange={(e) => setSelectedGu(e.target.value)}
-                className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-48"
-              >
-                {guList.map(gu => (
-                  <option key={gu} value={gu}>{gu}</option>
-                ))}
-              </select>
-            </div>
+            {!(activeTab === 'library' && libraryTargetMode === 'address') && (
+              <div className="flex flex-col">
+                <label className="text-xs font-bold text-slate-400 mb-1">자치구 선택</label>
+                <select
+                  value={selectedGu}
+                  onChange={(e) => setSelectedGu(e.target.value)}
+                  className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-48"
+                >
+                  {guList.map(gu => (
+                    <option key={gu} value={gu}>{gu}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {activeTab === 'library' && (
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -814,7 +819,9 @@ function App() {
           <div className="flex flex-col items-stretch md:items-end gap-2 text-slate-500 text-sm font-semibold">
             <div className="flex items-center justify-start md:justify-end gap-1">
               <MapPin className="text-blue-500" size={18} />
-              <span>선택 지역: 서울특별시 {selectedGu}</span>
+              <span>
+                선택 지역: 서울특별시{activeTab === 'library' && libraryTargetMode === 'address' ? '' : ` ${selectedGu}`}
+              </span>
               {activeTab === 'library' && libraryTargetMode === 'library' && selectedLibrary && (
                 <>
                   <ChevronRight size={16} />
@@ -852,7 +859,7 @@ function App() {
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-2xl mb-8 font-semibold">
-            ⚠️ {error} (로컬 Fallback 백업 데이터를 제공합니다.)
+            ⚠️ {error}
           </div>
         )}
 
@@ -1652,17 +1659,22 @@ function App() {
                   <Sparkles size={24} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-xl text-slate-900">{libraryDataDetail.library} 입지 요약</h3>
+                  <h3 className="font-extrabold text-xl text-slate-900">{libraryTargetName} 입지 요약</h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    반경 2km 인구, 수급자 규모, 주변 공공기관·문화시설을 함께 보며 서비스 협력 가능성을 확인합니다.
+                    기준 위치 2km 내 행정동 중심점 기준 인구, 수급자 규모, 주변 공공기관·문화시설을 함께 확인합니다.
                   </p>
+                  {libraryDataDetail.dongMatchMode === 'nearest_centroid_fallback' && (
+                    <p className="mt-2 text-xs font-bold text-amber-700">
+                      2km 안에 행정동 중심점이 없어 가장 가까운 행정동을 기준으로 인구·복지 지표를 제공합니다.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
                   <span className="text-[10px] font-extrabold text-blue-600">이용권역</span>
                   <p className="text-sm font-bold text-slate-700 mt-2">
-                    반경 2km 내 {formatCount(activeLibraryPopulation?.total, '명')} 규모의 잠재 이용권역을 봅니다.
+                    기준 위치 인접 행정동의 {formatCount(activeLibraryPopulation?.total, '명')} 규모를 봅니다.
                   </p>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
@@ -1685,7 +1697,7 @@ function App() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between h-36">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">도서관 반경 2km 총인구</p>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">기준 위치 인접 행정동 인구</p>
                     <h3 className="text-2xl font-extrabold text-slate-800 mt-1">
                       {formatCount(activeLibraryPopulation?.total, '명')}
                     </h3>
@@ -1702,7 +1714,7 @@ function App() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between h-36">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">반경 내 평균 수급자수</p>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">인접 행정동 평균 수급자수</p>
                     <h3 className="text-2xl font-extrabold text-blue-600 mt-1">
                       {libraryDataDetail.welfare.avgRecipientCount.toLocaleString()}명
                     </h3>
@@ -1732,7 +1744,7 @@ function App() {
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2">
-                  출처: 서울 열린데이터광장(공공도서관 현황)
+                  출처: {isAddressTarget ? '카카오 주소 검색 서비스' : '서울 열린데이터광장(공공도서관 현황)'}
                 </div>
               </div>
             </div>
@@ -1742,7 +1754,7 @@ function App() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
                 <div>
                   <div className="flex items-start justify-between gap-4 mb-4">
-                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Users size={20} className="text-blue-600" />도서관 반경 2km 내 인구 분포</h4>
+                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Users size={20} className="text-blue-600" />기준 위치 인접 행정동 인구 분포</h4>
                     <PopulationModeToggle populationMode={populationMode} onChange={setPopulationMode} />
                   </div>
                 </div>
@@ -1777,7 +1789,7 @@ function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:col-span-3 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-2 flex items-center gap-2"><MapPinned size={20} className="text-blue-600" />{libraryDataDetail.library} 주변 입지 분석</h4>
+                  <h4 className="font-extrabold text-lg text-slate-800 mb-2 flex items-center gap-2"><MapPinned size={20} className="text-blue-600" />{libraryTargetName} 주변 입지 분석</h4>
                   <p className="text-xs text-slate-400 mb-4">
                     빨간색 원: 1km 반경 (문화행사 연동) | 파란색 원: 2km 반경 (공공기관 연동)
                   </p>
@@ -1938,7 +1950,7 @@ function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-4">🏠 반경 2km 이내 행정동 목록</h4>
+                  <h4 className="font-extrabold text-lg text-slate-800 mb-4">🏠 기준 위치 2km 이내 행정동 중심점 목록</h4>
                   <div className="grid grid-cols-3 gap-2">
                     {libraryDataDetail.dongs.map((dong, idx) => (
                       <div key={idx} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center text-sm font-bold text-slate-700">
@@ -1948,13 +1960,16 @@ function App() {
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium mt-4 text-right">
-                  출처: 서울시 공공도서관 반경 2km 행정동 매핑 데이터
+                  출처: 서울시 행정동 중심점 좌표 기반 거리 계산
                 </div>
               </div>
 
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between" style={{ maxHeight: '350px' }}>
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-4 flex items-center gap-2"><Theater size={20} className="text-emerald-600" />주변 문화행사 상세정보 (2km / 자치구 내)</h4>
+                  <h4 className="font-extrabold text-lg text-slate-800 mb-4 flex items-center gap-2">
+                    <Theater size={20} className="text-emerald-600" />
+                    주변 문화행사 상세정보 {isAddressTarget ? '(2km)' : '(2km / 자치구 내)'}
+                  </h4>
                   <div className="overflow-y-auto space-y-3 pr-2" style={{ maxHeight: '220px' }}>
                     {libraryDataDetail.infrastructure.nearbyEvents && libraryDataDetail.infrastructure.nearbyEvents.length > 0 ? (
                       libraryDataDetail.infrastructure.nearbyEvents.map((e, idx) => (
@@ -1963,7 +1978,7 @@ function App() {
                           <p className="text-xs text-slate-500 mt-1">장소: {e.place}</p>
                           <p className="text-xs text-slate-400 mt-0.5">📅 기간: {e.startDate} ~ {e.endDate}</p>
                           <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full mt-2 inline-block">
-                            {typeof e.distance === 'number' ? `도서관에서 ${e.distance.toLocaleString()}m` : e.distance}
+                            {typeof e.distance === 'number' ? `${distanceOriginLabel}에서 ${e.distance.toLocaleString()}m` : e.distance}
                           </span>
                         </div>
                       ))
