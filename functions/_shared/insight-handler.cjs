@@ -193,6 +193,19 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+function parseCoordinate(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isSeoulCoordinate(lat, lng) {
+  return lat >= 37.4 && lat <= 37.75 && lng >= 126.7 && lng <= 127.3;
+}
+
+function roundCoordinate(value) {
+  return Number(value.toFixed(5));
+}
+
 // 파일 절대 경로 탐색 헬퍼 (로컬 에뮬레이터 및 프로덕션 람다 겸용)
 function getAbsolutePath(filePath) {
   console.log(`[getAbsolutePath] Requested: ${filePath}`);
@@ -734,8 +747,8 @@ async function withSupabaseFallback(label, fetcher, fallback) {
 exports.handler = async (event, context) => {
   const queryParams = event.queryStringParameters || {};
   const { type, gu, library } = queryParams;
-  const SEOUL_API_KEY = process.env.SEOUL_API_KEY || '556654646967657535346574744646';
-  const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY || '6551df3aa9551605018746d7d8f7b768';
+  const SEOUL_API_KEY = process.env.SEOUL_API_KEY || '';
+  const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY || '';
   const forceRefresh = queryParams.forceRefresh === '1';
   const includeCacheMeta = queryParams.includeCacheMeta === '1';
   const cacheVersion = queryParams.cacheVersion || 'default';
@@ -1203,12 +1216,23 @@ exports.handler = async (event, context) => {
     }
 
     // ------------------ 2. 개별도서관별 대시보드 API ------------------
-    else if (type === 'library') {
-      if (!gu || !library) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: 'gu 및 library 파라미터가 필요합니다.' }) };
+    else if (type === 'library' || type === 'location') {
+      const isLocationTarget = type === 'location';
+      const requestedLat = parseCoordinate(queryParams.lat);
+      const requestedLng = parseCoordinate(queryParams.lng);
+
+      if (!gu || (!isLocationTarget && !library)) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: isLocationTarget ? 'gu 파라미터가 필요합니다.' : 'gu 및 library 파라미터가 필요합니다.' }) };
+      }
+      if (isLocationTarget && (requestedLat === null || requestedLng === null || !isSeoulCoordinate(requestedLat, requestedLng))) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: '서울시 범위의 올바른 위도·경도가 필요합니다.' }) };
       }
 
-      const cacheKey = buildCacheKey('library', { version: cacheVersion, gu, library, populationCacheBucket });
+      const roundedLat = isLocationTarget ? roundCoordinate(requestedLat) : null;
+      const roundedLng = isLocationTarget ? roundCoordinate(requestedLng) : null;
+      const cacheKey = isLocationTarget
+        ? buildCacheKey('location', { version: cacheVersion, gu, lat: roundedLat, lng: roundedLng, populationCacheBucket })
+        : buildCacheKey('library', { version: cacheVersion, gu, library, populationCacheBucket });
       const cached = !forceRefresh ? getCachedResponse(cacheKey) : null;
       if (cached) {
         if (includeCacheMeta) {
@@ -1233,21 +1257,41 @@ exports.handler = async (event, context) => {
         return { statusCode: 500, headers, body: JSON.stringify({ error: '도서관 매핑 정보가 소실되었습니다.' }) };
       }
 
-      const libInfo = mappingData.libraries.find(l => l.name === library && l.gu === gu);
-      if (!libInfo) {
+      const validDistricts = new Set(mappingData.libraries.map(item => item.gu));
+      if (!validDistricts.has(gu)) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: '서울시 자치구 정보를 확인할 수 없습니다.' }) };
+      }
+
+      const targetInfo = isLocationTarget
+        ? {
+          name: '입력 위치',
+          gu,
+          lat: roundedLat,
+          lng: roundedLng,
+          address: '',
+          dongs: []
+        }
+        : mappingData.libraries.find(item => item.name === library && item.gu === gu);
+      if (!targetInfo) {
         return { statusCode: 404, headers, body: JSON.stringify({ error: '해당 도서관 정보를 찾을 수 없습니다.' }) };
       }
+      const targetLabel = targetInfo.name;
 
       // 2) 실시간 하버사인 거리 계산으로 반경 2km 이내 행정동 동적 추출
       const dongCoords = readJSON('dong_coordinates.json');
       let dongs = [];
       let dongDistances = {}; // 디버깅 및 프론트엔드 참조용
       let dongAreas = [];
+      let dongMatchMode = 'radius_centroid';
 
-      if (dongCoords && libInfo.lat && libInfo.lng) {
+      let nearestDong = null;
+      if (dongCoords && targetInfo.lat && targetInfo.lng) {
         Object.values(dongCoords).forEach(dongEntry => {
           if (!dongEntry.lat || !dongEntry.lng) return;
-          const dist = haversine(libInfo.lat, libInfo.lng, dongEntry.lat, dongEntry.lng);
+          const dist = haversine(targetInfo.lat, targetInfo.lng, dongEntry.lat, dongEntry.lng);
+          if (!nearestDong || dist < nearestDong.distance) {
+            nearestDong = { ...dongEntry, distance: dist };
+          }
           if (dist <= 2000) {
             dongs.push(dongEntry.dong);
             dongDistances[dongEntry.dong] = Math.round(dist);
@@ -1258,17 +1302,28 @@ exports.handler = async (event, context) => {
             });
           }
         });
-        console.log(`[Haversine] ${library}: ${dongs.length}개 행정동 매칭 (2km 이내)`, dongs);
+        if (dongs.length === 0 && nearestDong) {
+          dongMatchMode = 'nearest_centroid_fallback';
+          dongs.push(nearestDong.dong);
+          dongDistances[nearestDong.dong] = Math.round(nearestDong.distance);
+          dongAreas.push({
+            gu: nearestDong.gu,
+            dong: nearestDong.dong,
+            distance: Math.round(nearestDong.distance)
+          });
+        }
+        console.log(`[Haversine] ${targetLabel}: ${dongs.length}개 행정동 매칭 (2km 이내)`, dongs);
       } else {
         // dong_coordinates.json 로드 실패 시 기존 하드코딩 dongs 폴백
         console.warn('[Haversine] dong_coordinates.json 로드 실패, 기존 dongs 폴백 사용');
-        dongs = libInfo.dongs || [];
+        dongMatchMode = 'mapping_fallback';
+        dongs = targetInfo.dongs || [];
       }
 
 
       // 2) 행정동 인구 현황 집계: 주민등록인구 기본 + 생활인구 병행 사전 로드
       const residentPopulation = await withSupabaseFallback(
-        `library resident population ${library}`,
+        `library resident population ${targetLabel}`,
         () => supabaseMetrics.fetchLibraryResidentPopulation(dongs),
         () => fetchResidentLibraryPopulationFromCsv({ dongs })
       );
@@ -1290,7 +1345,7 @@ exports.handler = async (event, context) => {
       const avgWelfare = matchedWelfareRows.reduce((sum, r) => sum + parseInt(r['수급자수'] || 0), 0) / (matchedWelfareRows.length || 1);
       const seoulAvgWelfare = welfareCSV.reduce((sum, r) => sum + parseInt(r['수급자수'] || 0), 0) / (welfareCSV.length || 1);
       const supabaseLibraryWelfare = await withSupabaseFallback(
-        `library welfare ${library}`,
+        `library welfare ${targetLabel}`,
         () => supabaseMetrics.fetchLibraryWelfare(dongs),
         () => null
       );
@@ -1307,8 +1362,8 @@ exports.handler = async (event, context) => {
           headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` },
           params: {
             category_group_code: category.code,
-            x: libInfo.lng,
-            y: libInfo.lat,
+            x: targetInfo.lng,
+            y: targetInfo.lat,
             radius: 2000,
             sort: 'distance',
             size: 15
@@ -1372,7 +1427,7 @@ exports.handler = async (event, context) => {
 
             // 1. 위경도가 유효한 경우 -> 반경 2km 이내 매칭
             if (!isNaN(lot) && !isNaN(latVal) && lot > 120 && latVal > 30) {
-              const dist = haversine(libInfo.lat, libInfo.lng, latVal, lot);
+              const dist = haversine(targetInfo.lat, targetInfo.lng, latVal, lot);
               if (dist <= 2000) {
                 isMatched = true;
                 distance = Math.round(dist);
@@ -1382,7 +1437,7 @@ exports.handler = async (event, context) => {
             }
 
             // 2. 자치구 기준 매칭 (좌표가 유실되었거나 먼 곳이어도 동일 구 내 행사는 목록에 리스트업)
-            if (!isMatched && e.GUNAME && (e.GUNAME.includes(gu) || gu.includes(e.GUNAME))) {
+            if (!isLocationTarget && !isMatched && e.GUNAME && (e.GUNAME.includes(gu) || gu.includes(e.GUNAME))) {
               isMatched = true;
               distance = "자치구 내";
               finalLat = null;
@@ -1414,19 +1469,22 @@ exports.handler = async (event, context) => {
         });
 
         nearbyEvents = nearbyEvents.slice(0, 15);
-        console.log(`[CultureAPI] 최종 매칭된 문화행사 수 (${library}):`, nearbyEvents.length);
+        console.log(`[CultureAPI] 최종 매칭된 문화행사 수 (${targetLabel}):`, nearbyEvents.length);
       } catch (err) {
         console.warn('문화행사 API 기반 반경 필터링 실패:', err.message);
       }
 
       const responseData = {
-        library: libInfo.name,
-        gu: libInfo.gu,
-        coordinates: { lat: libInfo.lat, lng: libInfo.lng },
-        address: libInfo.address,
+        library: targetInfo.name,
+        targetType: isLocationTarget ? 'address' : 'library',
+        targetLabel,
+        gu: targetInfo.gu,
+        coordinates: { lat: targetInfo.lat, lng: targetInfo.lng },
+        address: targetInfo.address,
         dongs,
         dongDistances,
         dongAreas,
+        dongMatchMode,
         demographics: {
           ageDistribution: defaultPopulation.ageDistribution,
           genderRatio: defaultPopulation.genderRatio,
@@ -1472,7 +1530,7 @@ exports.handler = async (event, context) => {
 
     // 잘못된 파라미터 요청
     else {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: '올바른 type 파라미터(district 또는 library)를 입력하세요.' }) };
+        return { statusCode: 400, headers, body: JSON.stringify({ error: '올바른 type 파라미터(district, library 또는 location)를 입력하세요.' }) };
     }
   } catch (error) {
     console.error('API 메인 핸들러 에러:', error);
