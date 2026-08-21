@@ -45,9 +45,9 @@ const axios = {
   }
 };
 
-const INSIGHT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1주일
+const INSIGHT_CACHE_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 월간 갱신 사이 캐시 유지
 const INSIGHT_CACHE_FILE = '/tmp/insight-api-cache.json';
-const INSIGHT_CACHE_VERSION = 'v4';
+const INSIGHT_CACHE_VERSION = 'v5';
 const memoryCache = new Map();
 
 function buildCacheKey(type, identifiers = {}) {
@@ -583,7 +583,8 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
   }
 
   const today = new Date();
-  const candidateDates = Array.from({ length: 21 }, (_, idx) => {
+  // 생활인구 공개가 3주 이상 늦어지는 경우에도 가장 최근 제공일을 찾는다.
+  const candidateDates = Array.from({ length: 45 }, (_, idx) => {
     const date = new Date(today);
     date.setDate(today.getDate() - idx);
     return formatYYYYMMDD(date);
@@ -752,7 +753,8 @@ exports.handler = async (event, context) => {
   const forceRefresh = queryParams.forceRefresh === '1';
   const includeCacheMeta = queryParams.includeCacheMeta === '1';
   const cacheVersion = queryParams.cacheVersion || 'default';
-  const populationCacheBucket = queryParams.populationCacheBucket || formatYYYYMMDD(new Date());
+  // API 값은 월간 스냅샷으로 고정하고 다음 달 버킷에서 자동 갱신한다.
+  const populationCacheBucket = queryParams.populationCacheBucket || formatYYYYMMDD(new Date()).slice(0, 6);
   const nowIso = new Date().toISOString();
 
   const headers = {
