@@ -47,7 +47,7 @@ const axios = {
 
 const INSIGHT_CACHE_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 월간 갱신 사이 캐시 유지
 const INSIGHT_CACHE_FILE = '/tmp/insight-api-cache.json';
-const INSIGHT_CACHE_VERSION = 'v5';
+const INSIGHT_CACHE_VERSION = 'v6';
 const memoryCache = new Map();
 
 function buildCacheKey(type, identifiers = {}) {
@@ -369,6 +369,15 @@ function formatYYYYMMDD(date) {
   return seoulTime.toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+function dateLagDays(requestedDate, referenceDate) {
+  const parse = value => Date.UTC(
+    Number(String(value).slice(0, 4)),
+    Number(String(value).slice(4, 6)) - 1,
+    Number(String(value).slice(6, 8))
+  );
+  return Math.max(0, Math.round((parse(requestedDate) - parse(referenceDate)) / (24 * 60 * 60 * 1000)));
+}
+
 function parsePopulationNumber(value) {
   const parsed = parseFloat(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -381,6 +390,11 @@ function createEmptyPopulationSummary() {
     total: 0,
     source: 'csv_fallback',
     referenceDate: null,
+    requestedDate: null,
+    retrievedAt: null,
+    dataLagDays: null,
+    freshnessStatus: 'unavailable',
+    isDelayed: false,
     matchedDongs: [],
     missingDongs: []
   };
@@ -583,8 +597,8 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
   }
 
   const today = new Date();
-  // 생활인구 공개가 3주 이상 늦어지는 경우에도 가장 최근 제공일을 찾는다.
-  const candidateDates = Array.from({ length: 45 }, (_, idx) => {
+  // 원천 공개가 장기간 늦어져도 최근 정상 제공일을 찾아 대체값으로 사용한다.
+  const candidateDates = Array.from({ length: 120 }, (_, idx) => {
     const date = new Date(today);
     date.setDate(today.getDate() - idx);
     return formatYYYYMMDD(date);
@@ -620,6 +634,11 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
     const rowsByCode = new Map(rows.map(row => [String(extractDongCodeFromRow(row)), row]));
     const attemptSummary = createEmptyPopulationSummary();
     attemptSummary.referenceDate = availableDate;
+    attemptSummary.requestedDate = candidateDates[0];
+    attemptSummary.retrievedAt = new Date().toISOString();
+    attemptSummary.dataLagDays = dateLagDays(attemptSummary.requestedDate, availableDate);
+    attemptSummary.isDelayed = attemptSummary.dataLagDays > 0;
+    attemptSummary.freshnessStatus = attemptSummary.isDelayed ? 'latest_available_delayed' : 'current';
     attemptSummary.missingDongs = [...unmappedDongs];
     let matched = false;
     dongCodeEntries.forEach(({ dong, code }) => {

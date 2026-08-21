@@ -55,6 +55,20 @@ const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY || '';
 const KAKAO_SDK_SCRIPT_ID = 'kakao-map-sdk';
 let kakaoMapSdkPromise = null;
 
+function PopulationSource({ population, className = '' }) {
+  const showDelayed = population?.source === 'SPOP_LOCAL_RESD_DONG' && population?.isDelayed;
+  return (
+    <div className={className}>
+      <div>출처: {getPopulationSourceLabel(population)}</div>
+      {showDelayed && (
+        <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">
+          최근 정상값 대체 · 원천 제공 {population.dataLagDays}일 지연
+        </div>
+      )}
+    </div>
+  );
+}
+
 const loadKakaoMapSdk = () => {
   if (window.kakao?.maps) {
     return Promise.resolve(window.kakao);
@@ -1055,9 +1069,10 @@ function App() {
                     <Users size={24} />
                   </div>
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2">
-                  출처: {getPopulationSourceLabel(activeDistrictPopulation)}
-                </div>
+                <PopulationSource
+                  population={activeDistrictPopulation}
+                  className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2"
+                />
               </div>
 
               <div className="order-3 bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col justify-between min-h-32 sm:h-36">
@@ -1131,9 +1146,10 @@ function App() {
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(activeDistrictPopulation)}
-                </div>
+                <PopulationSource
+                  population={activeDistrictPopulation}
+                  className="text-[10px] text-slate-400 font-medium mt-2 text-right"
+                />
               </div>
 
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col justify-between">
@@ -1146,9 +1162,10 @@ function App() {
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(activeDistrictPopulation)}
-                </div>
+                <PopulationSource
+                  population={activeDistrictPopulation}
+                  className="text-[10px] text-slate-400 font-medium mt-2 text-right"
+                />
               </div>
             </div>
 
@@ -1707,9 +1724,10 @@ function App() {
                     <Users size={24} />
                   </div>
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2">
-                  출처: {getPopulationSourceLabel(activeLibraryPopulation)}
-                </div>
+                <PopulationSource
+                  population={activeLibraryPopulation}
+                  className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2"
+                />
               </div>
 
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between h-36">
@@ -1765,9 +1783,10 @@ function App() {
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(activeLibraryPopulation)}
-                </div>
+                <PopulationSource
+                  population={activeLibraryPopulation}
+                  className="text-[10px] text-slate-400 font-medium mt-2 text-right"
+                />
               </div>
 
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
@@ -1780,9 +1799,10 @@ function App() {
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium mt-2 text-right">
-                  출처: {getPopulationSourceLabel(activeLibraryPopulation)}
-                </div>
+                <PopulationSource
+                  population={activeLibraryPopulation}
+                  className="text-[10px] text-slate-400 font-medium mt-2 text-right"
+                />
               </div>
             </div>
 
