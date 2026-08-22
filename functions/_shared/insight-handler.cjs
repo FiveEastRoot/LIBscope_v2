@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const staticData = require('./static-data.cjs');
 const supabaseMetrics = require('./supabase-metrics.cjs');
+const bundledLibraryMapping = require('../_data/library_dong_mapping.json');
 
 const axios = {
   async get(url, options = {}) {
@@ -258,13 +259,9 @@ function getDataFileStatus(filePath) {
 }
 
 function readBundledDataFile(filePath) {
-  // 도서관 매핑은 배포 included_files를 우선 사용해 내장 정적본의 갱신 지연을 피한다.
+  // 도서관 매핑은 함수 빌드에 직접 포함해 갱신 대상과 배포 함수의 버전을 맞춘다.
   if (filePath === 'library_dong_mapping.json') {
-    try {
-      return fs.readFileSync(path.join(__dirname, '../_data/library_dong_mapping.json'), 'utf-8');
-    } catch (err) {
-      console.warn('[Mapping] deployed library mapping fallback:', err.message);
-    }
+    return JSON.stringify(bundledLibraryMapping);
   }
 
   if (Object.prototype.hasOwnProperty.call(staticData, filePath)) {
