@@ -8,6 +8,9 @@ const DEFAULT_SLEEP_MS = 250;
 const SLEEP_MS = Math.max(0, parseInt(process.env.INSIGHT_REFRESH_SLEEP_MS || `${DEFAULT_SLEEP_MS}`, 10));
 const TARGET_SCOPE = (process.env.INSIGHT_REFRESH_SCOPE || 'all').toLowerCase();
 const INCLUDE_CACHE_META = process.env.INSIGHT_INCLUDE_CACHE_META === '1';
+const REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.INSIGHT_REFRESH_TIMEOUT_MS || '90000', 10));
+const MAX_ATTEMPTS = Math.max(1, parseInt(process.env.INSIGHT_REFRESH_MAX_ATTEMPTS || '3', 10));
+const RETRY_DELAY_MS = Math.max(0, parseInt(process.env.INSIGHT_REFRESH_RETRY_DELAY_MS || '1500', 10));
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -19,16 +22,29 @@ function getLibraryMapping() {
   return JSON.parse(content);
 }
 
-async function refreshOne(url, params) {
-  const response = await axios.get(url, {
-    params: {
-      ...params,
-      forceRefresh: '1',
-      includeCacheMeta: INCLUDE_CACHE_META ? '1' : '0'
-    },
-    timeout: 45000
-  });
-  return response.data;
+function isRetryableError(err) {
+  const status = err?.response?.status;
+  return !status || status === 408 || status === 429 || status >= 500;
+}
+
+async function refreshOne(url, item) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await axios.get(url, {
+        params: {
+          ...item.params,
+          forceRefresh: '1',
+          includeCacheMeta: INCLUDE_CACHE_META ? '1' : '0'
+        },
+        timeout: REQUEST_TIMEOUT_MS
+      });
+      return response.data;
+    } catch (err) {
+      if (!isRetryableError(err) || attempt === MAX_ATTEMPTS) throw err;
+      console.warn(`↻ ${item.label} 재시도 ${attempt}/${MAX_ATTEMPTS - 1}: ${err.message}`);
+      if (RETRY_DELAY_MS > 0) await sleep(RETRY_DELAY_MS * attempt);
+    }
+  }
 }
 
 async function runQueue(items) {
@@ -41,7 +57,7 @@ async function runQueue(items) {
       const item = queue[idx++];
       try {
         const startedAt = Date.now();
-        const result = await refreshOne(BASE_URL, item.params);
+        const result = await refreshOne(BASE_URL, item);
         const elapsed = Date.now() - startedAt;
         const cacheState = result._cache ? `(cache:${result._cache.fromCache ? 'hit' : 'fresh'})` : '';
         console.log(`✅ ${item.label} ${cacheState} (${elapsed}ms)`);
@@ -98,4 +114,3 @@ main().catch(err => {
   console.error('refresh script error:', err.message);
   process.exit(1);
 });
-

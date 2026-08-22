@@ -258,6 +258,15 @@ function getDataFileStatus(filePath) {
 }
 
 function readBundledDataFile(filePath) {
+  // 도서관 매핑은 배포 included_files를 우선 사용해 내장 정적본의 갱신 지연을 피한다.
+  if (filePath === 'library_dong_mapping.json') {
+    try {
+      return fs.readFileSync(path.join(__dirname, '../_data/library_dong_mapping.json'), 'utf-8');
+    } catch (err) {
+      console.warn('[Mapping] deployed library mapping fallback:', err.message);
+    }
+  }
+
   if (Object.prototype.hasOwnProperty.call(staticData, filePath)) {
     return staticData[filePath];
   }
@@ -381,6 +390,10 @@ function dateLagDays(requestedDate, referenceDate) {
 function parsePopulationNumber(value) {
   const parsed = parseFloat(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeLookupText(value) {
+  return String(value || '').normalize('NFC').trim().replace(/\s+/g, ' ');
 }
 
 function createEmptyPopulationSummary() {
@@ -1292,7 +1305,10 @@ exports.handler = async (event, context) => {
           address: '',
           dongs: []
         }
-        : mappingData.libraries.find(item => item.name === library && item.gu === gu);
+        : mappingData.libraries.find(item => (
+          normalizeLookupText(item.name) === normalizeLookupText(library)
+          && normalizeLookupText(item.gu) === normalizeLookupText(gu)
+        ));
       if (!targetInfo) {
         return { statusCode: 404, headers, body: JSON.stringify({ error: '해당 도서관 정보를 찾을 수 없습니다.' }) };
       }
