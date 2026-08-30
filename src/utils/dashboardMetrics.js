@@ -9,6 +9,7 @@ export const getAgeChartOption = (ageDistribution) => {
   const colors = categories.map(cat => {
     const ageNum = Number(cat.match(/^\d+/)?.[0] || 0);
     if (ageNum <= 9) return '#54a0ff';
+    if (ageNum <= 19) return '#22c55e';
     if (ageNum <= 64) return '#facc15';
     return '#ef4444';
   });
@@ -125,6 +126,7 @@ export const buildSocialSafetySections = (socialIndicators) => {
         inactive: 'bg-white border-amber-100 text-amber-700 hover:bg-amber-50',
         pill: 'bg-amber-100 text-amber-700',
         panel: 'bg-amber-50/60 border-amber-100',
+        header: 'bg-amber-700 border-amber-800',
         text: 'text-amber-700',
         item: 'bg-white border-amber-100'
       },
@@ -140,6 +142,7 @@ export const buildSocialSafetySections = (socialIndicators) => {
         inactive: 'bg-white border-rose-100 text-rose-700 hover:bg-rose-50',
         pill: 'bg-rose-100 text-rose-700',
         panel: 'bg-rose-50/60 border-rose-100',
+        header: 'bg-rose-700 border-rose-800',
         text: 'text-rose-700',
         item: 'bg-white border-rose-100'
       },
@@ -155,6 +158,7 @@ export const buildSocialSafetySections = (socialIndicators) => {
         inactive: 'bg-white border-cyan-100 text-cyan-700 hover:bg-cyan-50',
         pill: 'bg-cyan-100 text-cyan-700',
         panel: 'bg-cyan-50/60 border-cyan-100',
+        header: 'bg-cyan-800 border-cyan-900',
         text: 'text-cyan-700',
         item: 'bg-white border-cyan-100'
       },
@@ -283,6 +287,12 @@ export const formatPopulationSourceDate = (rawDate) => {
 
 export const getPopulationSourceLabel = (population) => {
   if (!population) return '행정동 통계 (BOM 백업)';
+  if (population.source === 'kosis_resident_population' || population.source === 'supabase_resident_population') {
+    const dateText = formatPopulationSourceDate(population.referenceDate);
+    return dateText
+      ? `KOSIS 주민등록인구(행정동, 기준일 ${dateText})`
+      : 'KOSIS 주민등록인구(행정동)';
+  }
   if (population.source === 'resident_registration_csv_fallback') {
     return '주민등록인구 통계 (BOM 백업)';
   }

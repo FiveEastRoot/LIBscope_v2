@@ -21,7 +21,8 @@ const {
   getDirectReadiness,
   assessInsightQuality,
   pickProviderAndModel,
-  generateDistrictScreenText
+  generateDistrictScreenText,
+  generateDistrictReportNarrative
 } = gatewayModule;
 
 const {
@@ -34,9 +35,10 @@ const {
   withCacheStatus
 } = cacheModule;
 
-const SECTION_PROMPT_VERSION = 'district-section-interpretation-v0.1';
-const INSIGHT_PROMPT_VERSION = 'district-summary-insight-v0.2';
-const PROMPT_VERSION = `${SECTION_PROMPT_VERSION}+${INSIGHT_PROMPT_VERSION}`;
+const SECTION_PROMPT_VERSION = 'district-section-interpretation-v1.0';
+const INSIGHT_PROMPT_VERSION = 'district-summary-insight-v0.5';
+const REPORT_NARRATIVE_PROMPT_VERSION = 'district-report-core-interpretation-v1.3';
+const PROMPT_VERSION = `${SECTION_PROMPT_VERSION}+${INSIGHT_PROMPT_VERSION}+${REPORT_NARRATIVE_PROMPT_VERSION}`;
 const SECTION_CACHE_KEYS = ['population', 'culture', 'education', 'socialSafety'];
 
 function normalizeRegenerateSections(value) {
@@ -300,6 +302,15 @@ export default async function llmHarness(request) {
         // Default stays at zero; one repair pass is allowed only for an explicit manual retry.
         maxQualityRetries: qualityRetries
       });
+      const reportNarrativeModel = MODEL_RECOMMENDATIONS.districtReport.openai || 'gpt-5.6-terra';
+      generatedText.reportNarrative = await generateDistrictReportNarrative({
+        basePayload: generationBasePayload,
+        interpretations: generatedText.interpretations,
+        insight: generatedText.insight,
+        route: modelPick.route,
+        provider: 'openai',
+        model: reportNarrativeModel
+      });
       const generatedCardsValidation = validateGeneratedInsightCards(generatedText);
       if (!generatedCardsValidation.ok) {
         throw new Error(`AI 응답 카드 계약 위반: ${generatedCardsValidation.reason}`);
@@ -316,9 +327,12 @@ export default async function llmHarness(request) {
           billingRoute: modelPick.route === 'gateway' ? 'netlify-ai-gateway' : 'direct-provider-api',
           provider: modelPick.provider,
           model: modelPick.model,
+          reportNarrativeProvider: 'openai',
+          reportNarrativeModel,
           promptTemplate: {
             sections: SECTION_PROMPT_VERSION,
             insight: INSIGHT_PROMPT_VERSION,
+            reportNarrative: REPORT_NARRATIVE_PROMPT_VERSION,
             cache: PROMPT_VERSION
           },
           insightQuality,

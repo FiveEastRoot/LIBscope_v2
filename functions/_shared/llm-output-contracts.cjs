@@ -79,10 +79,10 @@ const SECTION_CONTRACTS = {
   },
   culture: {
     sectionKey: 'culture',
-    label: '문화역량·향유 지표',
-    generationUnit: 'precomputed_metric_interpretation',
-    inputGroups: ['cultureMetrics2023', 'cultureEnjoyment2024'],
-    requiredInputFields: ['gu', 'cultureMetrics.year', 'cultureMetrics.public_culture_facilities'],
+    label: '자치구 문화 통합 해석',
+    generationUnit: 'metric_interpretation',
+    inputGroups: ['cultureMetrics2023', 'cultureEnjoyment2024', 'cultureFacilities', 'cultureEvents', 'publicLibraries'],
+    requiredInputFields: ['gu', 'cultureMetrics.year', 'cultureMetrics.public_culture_facilities', 'cultureAndEducation.cultureFacilities', 'cultureAndEducation.cultureEvents', 'cultureAndEducation.publicLibraryCount'],
     outputSlots: ['summary', 'keyFindings', 'cautions', 'evidenceRefs', 'recommendedView', 'reportUse'],
     sentenceLimits: {
       summarySentences: 2,
@@ -92,12 +92,18 @@ const SECTION_CONTRACTS = {
     outputSchema: COMMON_OUTPUT_SCHEMA,
     interpretationRules: [
       '문화향유 값은 서울시 집단별 참고값으로 표현하고 자치구 직접 순위처럼 쓰지 않음.',
-      '시설 공급량, 인구 대비 접근성, 향유 참고값을 분리.',
-      '고정 데이터셋은 최초 생성 후 DB 저장 대상으로 처리.',
+      '문화역량·향유 지표와 문화시설·공공도서관·진행 중 및 예정 행사를 함께 근거로 사용.',
+      '시설 공급량, 인구 대비 접근성, 향유 참고값, 실제 지역 자원의 위치와 일정을 분리한 뒤 하나의 자치구 문화 판단으로 연결.',
+      '인구 10만 명당 값은 모든 문장에서 “인구 10만 명당” 조건을 유지하고 시설 총수처럼 축약하지 않음.',
+      'keyFindings 3개는 문화역량·접근성 수치, 실제 문화시설·도서관·행사, 2024 서울시 문화향유 참고값을 각각 하나 이상 반드시 포함.',
+      'summary는 접근성 판단, 시설·행사 활용, 향유·참여 연결을 각각 담은 짧은 3문장으로 작성.',
+      '각 의미는 같은 keyFinding의 근거에서 직접 도출하며 근거에 없는 학교·기관·대상을 새로 추가하지 않음.',
+      '시설·행사 수는 이용량이나 주민 수요의 직접 추정치로 단정하지 않음.',
+      '행사 유형과 데이터 원천의 차이를 유지하고 생활권 안내·협력기관·홍보 채널 판단으로 연결.',
       'keyFindings는 가능한 한 “근거: ... / 의미: ...” 구조로 작성.'
     ],
-    defaultModelRecommendationKey: 'batchPrecompute',
-    cachePolicy: 'static_dataset'
+    defaultModelRecommendationKey: 'metricBrief',
+    cachePolicy: 'district_snapshot'
   },
   education: {
     sectionKey: 'education',

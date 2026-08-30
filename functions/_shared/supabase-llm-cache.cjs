@@ -1,5 +1,11 @@
 const DEFAULT_TIMEOUT_MS = 5000;
 
+function stringifyForPostgres(value) {
+  return JSON.stringify(value, (_key, item) => (
+    typeof item === 'string' ? item.replace(/\u0000/g, '') : item
+  ));
+}
+
 function getSupabaseConfig() {
   const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
@@ -45,7 +51,7 @@ async function supabaseRequest(path, { method = 'GET', body, prefer } = {}) {
     const response = await fetch(`${config.url}/rest/v1/${path}`, {
       method,
       headers: buildHeaders(config.key, prefer ? { Prefer: prefer } : {}),
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : stringifyForPostgres(body),
       signal: controller.signal
     });
     const text = await response.text().catch(() => '');

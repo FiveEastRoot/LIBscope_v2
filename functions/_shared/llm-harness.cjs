@@ -185,20 +185,14 @@ function normalizeSnapshotValue(value) {
 }
 
 function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
+  const {
+    cultureEnjoymentReference2024: _staticCultureReference,
+    ...snapshotCultureMetrics
+  } = cultureMetrics || {};
   const population = districtData.population || {};
   const resident = getPopulationMode(population, 'resident') || population;
-  const living = getPopulationMode(population, 'living');
   const social = districtData.socialIndicators || {};
   const schools = districtData.cultureAndEducation?.schools || {};
-  const schoolDetails = districtData.cultureAndEducation?.schoolDetails || {};
-  const schoolDetailNames = Object.fromEntries(
-    Object.entries(schoolDetails).map(([key, list]) => [
-      key,
-      Array.isArray(list)
-        ? list.map(item => `${item?.name || ''}|${item?.address || ''}`).sort()
-        : []
-    ])
-  );
   const minimal = {
     harnessVersion: HARNESS_VERSION,
     analysisSignalVersion: ANALYSIS_SIGNAL_VERSION,
@@ -212,13 +206,9 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
         ageDistribution: resident?.ageDistribution,
         genderRatio: resident?.genderRatio
       },
-      living: living ? {
-        total: living?.total,
-        source: living?.source,
-        referenceDate: living?.referenceDate,
-        ageDistribution: living?.ageDistribution,
-        genderRatio: living?.genderRatio
-      } : null
+      // 생활인구는 공개 지연과 일시적 API 실패가 잦아 화면 보조지표로만 사용한다.
+      // 기본 주민등록인구 스냅샷이 같으면 AI 캐시를 불필요하게 무효화하지 않는다.
+      living: null
     },
     socialReferenceDate: districtData.socialIndicators?.referenceDate,
     socialSource: districtData.socialIndicators?.source,
@@ -234,12 +224,12 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
       totalRegisteredForeigners: social.totalRegisteredForeigners
     },
     cultureYear: normalizeSnapshotValue(cultureMetrics.year),
-    cultureMetrics: normalizeSnapshotValue(cultureMetrics),
+    // 공통 참고조사 값은 모든 자치구에 동일하며 프롬프트 버전으로 관리한다.
+    // 자치구 원천 스냅샷 키에는 실제 자치구별 지표만 포함한다.
+    cultureMetrics: normalizeSnapshotValue(snapshotCultureMetrics),
     cultureAndEducation: {
       schools,
-      schoolDetailNames,
-      publicLibraryCount: districtData.cultureAndEducation?.publicLibraryCount,
-      liveCultureEventsMonth: districtData.cultureAndEducation?.liveCultureEventsMonth
+      publicLibraryCount: districtData.cultureAndEducation?.publicLibraryCount
     },
     welfare: districtData.welfare
   };
@@ -253,12 +243,6 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
 function firstSignalText(analysisSignals, sectionKey, fallback = '') {
   const list = analysisSignals?.comparisons?.[sectionKey] || [];
   return list.find(item => item?.text)?.text || fallback;
-}
-
-function tensionText(analysisSignals, index = 0, fallback = '') {
-  const tension = analysisSignals?.crossMetricTensions?.[index];
-  if (!tension) return fallback;
-  return `${tension.title}: ${tension.evidence} / 의미: ${tension.implication}`;
 }
 
 function buildAnalysisBasis(analysisSignals, sectionKey) {
@@ -303,6 +287,37 @@ function buildMetricInterpretations({ districtData = {}, cultureMetrics = {}, an
   const culture = getCultureSignals(cultureMetrics);
   const education = getEducationSignals(districtData);
   const social = getSocialSignals(districtData);
+  const cultureResources = districtData.cultureAndEducation || {};
+  const resourceFacilities = Array.isArray(cultureResources.cultureFacilities)
+    ? cultureResources.cultureFacilities.filter(item => item?.typeKey !== 'library')
+    : [];
+  const resourceEvents = Array.isArray(cultureResources.cultureEvents) ? cultureResources.cultureEvents : [];
+  const publicLibraryCount = toNumber(cultureResources.publicLibraryCount) || 0;
+  const ongoingEventCount = resourceEvents.filter(item => item?.status === 'ongoing').length;
+  const upcomingEventCount = resourceEvents.filter(item => item?.status === 'upcoming').length;
+  const eventCategoryCounts = resourceEvents.reduce((counts, item) => {
+    const category = String(item?.category || '기타').trim();
+    counts.set(category, (counts.get(category) || 0) + 1);
+    return counts;
+  }, new Map());
+  const topEventCategory = [...eventCategoryCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))[0] || null;
+  const eventSourceCount = Object.values(cultureResources.cultureEventSources || {})
+    .filter(value => Number(value) > 0).length;
+  const enjoymentReference = Array.isArray(cultureMetrics.cultureEnjoymentReference2024)
+    ? cultureMetrics.cultureEnjoymentReference2024
+    : [];
+  const findEnjoymentValue = (groupKey, itemLabel) => enjoymentReference
+    .find(group => group?.key === groupKey)?.items
+    ?.find(item => item?.label === itemLabel);
+  const generalInfoExperience = findEnjoymentValue('general', '도서관 문화정보 경험');
+  const generalActualParticipation = findEnjoymentValue('general', '정보 기반 실제 참여');
+  const interestParticipationIntent = findEnjoymentValue('culture_interest', '소규모 지역행사 참여 의향');
+  const enjoymentEvidence = [
+    generalInfoExperience && `일반 시민 도서관 문화정보 경험 ${formatNumber(generalInfoExperience.value, generalInfoExperience.unit)}`,
+    generalActualParticipation && `정보 경험자의 실제 참여 ${formatNumber(generalActualParticipation.value, generalActualParticipation.unit)}`,
+    interestParticipationIntent && `문화 관심층 소규모 지역행사 참여 의향 ${formatNumber(interestParticipationIntent.value, interestParticipationIntent.unit)}`
+  ].filter(Boolean).join(', ');
 
   const seniorText = population.seniorRate !== null
     ? `65세 이상 ${formatNumber(population.senior, '명')}(${formatPercent(population.seniorRate)}) 규모 확인`
@@ -328,9 +343,11 @@ function buildMetricInterpretations({ districtData = {}, cultureMetrics = {}, an
   ];
   const cultureFindings = [
     `근거: ${firstSignalText(analysisSignals, 'culture', `공공문화시설 ${formatNumber(culture.publicCultureFacilities, '개')}, 인구 10만 명당 ${formatNumber(culture.publicCultureFacilitiesPer100k, '개')} 수준`)} / 의미: 시설 총량보다 도서관이 연결 또는 보완해야 할 문화 접점 판단에 사용.`,
-    `근거: ${analysisSignals?.comparisons?.culture?.find(item => item.key === 'libraries_per100k')?.text || `도서관 ${formatNumber(culture.librariesTotal, '개')}, 인구 10만 명당 ${formatNumber(culture.librariesPer100k, '개')} 수준`} / 의미: 도서관 밀도는 생활권 문화정보 전달과 프로그램 협력 부담을 가늠하는 기준.`,
-    `근거: 생활문화센터 ${formatNumber(culture.lifeCultureCenters, '개')}, 무장애 인증 문화공간 ${formatNumber(culture.barrierFreeSpaces, '개')} 확인 / 의미: 생활문화와 포용 접근성의 차이에 맞춰 도서관 공간과 안내 동선을 보완 배치해야 함.`,
-    `근거: ${tensionText(analysisSignals, 0, `문화정책 조례 ${formatNumber(culture.ordinanceCount, '건')}, 제·개정 ${formatNumber(culture.revisionCount, '건')} 확인`)} / 의미: 문화 기반과 도서관 밀도 간 차이가 있으면 도서관을 협력 거점 또는 조정 거점으로 우선 배치해야 함.`
+    `근거: 문화시설 ${formatNumber(resourceFacilities.length, '개소')}와 공공도서관 ${formatNumber(publicLibraryCount, '개관')} 위치 확인 / 의미: 시설 유형별 분포와 도서관 고정 거점을 함께 읽어 생활권 문화정보 안내 경로를 배치해야 함.`,
+    `근거: 진행 중 문화행사 ${formatNumber(ongoingEventCount, '건')}, 예정 문화행사 ${formatNumber(upcomingEventCount, '건')}${topEventCategory ? `, 최다 유형 ${topEventCategory[0]} ${formatNumber(topEventCategory[1], '건')}` : ''} 확인 / 의미: 행사 상태와 유형에 맞춰 홍보 시점·채널·협력기관을 분리 운영해야 함.`,
+    enjoymentEvidence
+      ? `근거: 2024 서울시 참고값 중 ${enjoymentEvidence} / 의미: 자치구 직접 수요로 단정하지 않고 도서관 문화정보 제공과 행사 참여 연결의 보조 기준으로 사용.`
+      : `근거: 생활문화센터 ${formatNumber(culture.lifeCultureCenters, '개')}, 무장애 인증 문화공간 ${formatNumber(culture.barrierFreeSpaces, '개')} 확인 / 의미: 생활문화와 포용 접근성에 맞춰 공간과 안내 동선을 보완 배치해야 함.`
   ];
   const educationFindings = [
     `근거: ${firstSignalText(analysisSignals, 'education', `교육기관 총 ${formatNumber(education.schoolTotal, '개교')} 수준`)} / 의미: 학교 수는 수요 추정치가 아니라 도서관 외부 협력 경로의 후보 밀도.`,
@@ -454,23 +471,24 @@ function buildMetricInterpretations({ districtData = {}, cultureMetrics = {}, an
     },
     culture: {
       sectionKey: 'culture',
-      title: '문화역량·향유 지표 해석',
-      modelRecommendation: MODEL_RECOMMENDATIONS.batchPrecompute,
-      summary: `${gu}의 문화시설 공급, 도서관 접근성, 문화향유 참고값 연결을 위한 해석.`,
+      title: '자치구 문화 통합 해석',
+      modelRecommendation: MODEL_RECOMMENDATIONS.metricBrief,
+      summary: `${gu}의 문화역량·향유 지표와 문화시설·공공도서관·문화행사를 함께 연결한 문화 접근성 및 참여 인사이트.`,
       keyFindings: cultureFindings,
       cautions: [
         '2024 문화향유 참고값은 서울시 집단별 조사값이며 자치구별 직접 순위 아님.',
-        '고정 데이터셋 성격이 강해 최초 생성 후 DB 저장형 해석에 적합.'
+        `시설과 문화행사 ${formatNumber(resourceEvents.length, '건')}은 실제 이용량이나 주민 수요를 직접 나타내지 않으며 ${formatNumber(eventSourceCount, '개')} 데이터 원천의 갱신 시점 차이 확인 필요.`
       ],
       evidenceRefs: buildEvidenceRefs('culture', cultureFindings),
       analysisBasis: buildAnalysisBasis(analysisSignals, 'culture'),
-      qualityFlags: ['mock_contract_ready', 'static_dataset'],
-      recommendedView: '지표 카드, 참여자 유형별 강조 리스트, 시설 공급 비교',
-      reportUse: '문화역량·향유 본문과 유의사항에 사용',
+      qualityFlags: ['mock_contract_ready', 'mixed_static_live_sources'],
+      recommendedView: '문화자원 구성·접근성 차트, 문화시설 지도, 진행 중·예정 행사 목록',
+      reportUse: '자치구 문화 접근성·참여·협력 자원 판단에 사용',
       promptContract: [
-        '시설 공급량과 인구 대비 접근성을 분리.',
-        '문화향유 참고값은 보조 기준선으로만 표현.',
-        '정책·시설·향유 간 연결 가능성을 실행 처방으로 표현.'
+        '문화역량·향유 수치와 실제 지역 문화자원을 한 해석 안에서 연결.',
+        '서울시 향유 참고값은 자치구 직접 수요가 아닌 보조 기준선으로 표현.',
+        '시설 위치와 행사 상태·유형을 생활권 안내·홍보·협력기관 처방으로 연결.',
+        '시설·행사 건수를 이용 수요로 단정하지 않음.'
       ]
     },
     education: {
@@ -611,15 +629,11 @@ function buildDistrictReport({ districtData = {}, cultureMetrics = {}, interpret
     .map(card => card?.text)
     .filter(Boolean);
   const executiveBody = insightCardText.length >= 3
-    ? `${gu}의 핵심 판단은 ${insightCardText[0]} ${insightCardText[1]} ${insightCardText[2]}`
-    : `${gu}의 인구구조, 문화역량, 교육인프라, 사회안전망 지표를 통합해 도서관 운영 단위와 우선순위를 정해야 함.`;
+    ? `${insightCardText.map(text => text.replace(/[.!?]+$/, '')).join('. ')}.`
+    : `${gu} 핵심 지표 기반 도서관 운영 우선순위 설정 필요.`;
   const libraryImplicationBody = [
-    '인구구조의 이용 시간대·이동성 조건, 사회안전망의 정보 도달성 조건, 문화·교육 인프라의 협력 자원을 연결해 도서관 운영 단위를 나누어야 함.',
-    '단일 프로그램 확대보다 권역, 대상, 접근 방식별로 서비스 시간대와 안내 채널을 분리 설계해야 함.'
-  ].join(' ');
-  const cautionBody = [
-    '생활인구와 주민등록인구의 기준 차이, 문화향유 고정 데이터셋의 서울시 조사값 성격, 사회안전망 민감 지표의 비단정 원칙을 분리해 해석할 필요.',
-    '지표 갱신 시점과 원천별 기준일이 다르므로 보고서 생성 시 snapshot 단위 관리가 필요함.'
+    '인구·복지·문화·교육 조건별 도서관 운영 단위 분리 필요.',
+    '권역·대상·접근 방식별 시간대와 안내 채널 재배치 권고.'
   ].join(' ');
   const analysisSignalBullets = [
     ...(analysisSignals?.notableSignals || []).slice(0, 4).map(item => `${item.label}: ${item.evidence}`),
@@ -655,21 +669,12 @@ function buildDistrictReport({ districtData = {}, cultureMetrics = {}, interpret
       heading: '6. 도서관 서비스 시사점',
       body: libraryImplicationBody,
       bullets: [
-        ...analysisSignalBullets.slice(0, 3),
         ...(interpretations.population?.keyFindings || []).slice(0, 1),
-        ...(interpretations.socialSafety?.keyFindings || []).slice(0, 1),
         ...(interpretations.culture?.keyFindings || []).slice(0, 1),
-        ...(interpretations.education?.keyFindings || []).slice(0, 1)
+        ...(interpretations.education?.keyFindings || []).slice(0, 1),
+        ...(interpretations.socialSafety?.keyFindings || []).slice(0, 1),
+        ...analysisSignalBullets.slice(0, 1)
       ]
-    },
-    {
-      heading: '7. 해석 유의사항',
-      body: cautionBody,
-      bullets: [
-        ...(interpretations.population?.cautions || []),
-        ...(interpretations.culture?.cautions || []),
-        ...(interpretations.socialSafety?.cautions || [])
-      ].slice(0, 6)
     }
   ];
 
@@ -717,7 +722,7 @@ function buildDistrictReport({ districtData = {}, cultureMetrics = {}, interpret
     evidenceRefs: Object.values(interpretations)
       .flatMap(packet => packet?.evidenceRefs || [])
       .slice(0, 24),
-    cautions: sections.find(section => section.heading?.startsWith('7.'))?.bullets || [],
+    cautions: [],
     qualityFlags: ['mock_contract_ready', 'report_template_draft']
   };
 }
@@ -843,8 +848,7 @@ function applyGeneratedReportNarrative(report = {}, reportNarrative = {}) {
     ['3.', reportNarrative.culture],
     ['4.', reportNarrative.education],
     ['5.', reportNarrative.socialSafety],
-    ['6.', reportNarrative.libraryImplications],
-    ['7.', reportNarrative.cautions]
+    ['6.', reportNarrative.libraryImplications]
   ];
 
   const sections = (report.sections || []).map(section => {

@@ -1,6 +1,8 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { 
   Building, 
   MapPin, 
@@ -20,12 +22,21 @@ import {
   Sparkles,
   FileText,
   Download,
-  Search
+  Search,
+  Landmark,
+  Library,
+  Drama,
+  GalleryVerticalEnd,
+  UsersRound,
+  Accessibility,
+  ScrollText,
+  Target
 } from 'lucide-react';
 import libraryData from '../library_dong_mapping.json';
 import MetricInterpretationPanel from './components/MetricInterpretationPanel';
 import PopulationModeToggle from './components/PopulationModeToggle';
 import ResponsiveEChart from './components/ResponsiveEChart';
+import DongPopulationMap from './components/DongPopulationMap';
 import {
   cultureColorClasses,
   cultureEnjoymentReference2024,
@@ -48,12 +59,128 @@ import {
 import { formatCount, formatMetric } from './utils/formatters';
 import { getModelRecommendationBadges } from './utils/modelBadges';
 
+const cultureEnjoymentAiReference2024 = cultureEnjoymentReference2024.map(({ key, label, denominator, items }) => ({
+  key,
+  label,
+  denominator,
+  items: items.map(({ label: itemLabel, value, unit, base, note }) => ({
+    label: itemLabel,
+    value,
+    unit,
+    base,
+    note
+  }))
+}));
+
+const cultureMetricIcons = {
+  infrastructure: Landmark,
+  library: Library,
+  performance: Drama,
+  exhibition: GalleryVerticalEnd,
+  local: UsersRound,
+  inclusive: Accessibility,
+  policy: ScrollText
+};
+
+const educationMarkerColors = {
+  elementary: '#3b82f6',
+  middle: '#6366f1',
+  high: '#a855f7',
+  university: '#f43f5e'
+};
+const educationGradeLabels = {
+  elementary: '초등학교',
+  middle: '중학교',
+  high: '고등학교',
+  university: '대학교'
+};
+const cultureFacilityTypes = [
+  { key: 'all', label: '전체 시설', color: '#0f766e' },
+  { key: 'library', label: '도서관', color: '#059669' },
+  { key: 'museum', label: '박물관·기념관', color: '#2563eb' },
+  { key: 'exhibition', label: '미술관·전시', color: '#7c3aed' },
+  { key: 'performance', label: '공연장·극장', color: '#e11d48' },
+  { key: 'community', label: '문화센터·문화회관', color: '#d97706' },
+  { key: 'other', label: '기타 문화시설', color: '#475569' }
+];
+const cultureFacilityColors = Object.fromEntries(cultureFacilityTypes.map(type => [type.key, type.color]));
+
+const reportSectionThemes = [
+  { icon: Target, accent: 'text-blue-700', iconBox: 'border-blue-200 bg-blue-50 text-blue-700', rule: 'border-blue-100', bullet: 'bg-blue-500' },
+  { icon: Users, accent: 'text-cyan-700', iconBox: 'border-cyan-200 bg-cyan-50 text-cyan-700', rule: 'border-cyan-100', bullet: 'bg-cyan-500' },
+  { icon: Landmark, accent: 'text-violet-700', iconBox: 'border-violet-200 bg-violet-50 text-violet-700', rule: 'border-violet-100', bullet: 'bg-violet-500' },
+  { icon: GraduationCap, accent: 'text-indigo-700', iconBox: 'border-indigo-200 bg-indigo-50 text-indigo-700', rule: 'border-indigo-100', bullet: 'bg-indigo-500' },
+  { icon: Shield, accent: 'text-rose-700', iconBox: 'border-rose-200 bg-rose-50 text-rose-700', rule: 'border-rose-100', bullet: 'bg-rose-500' },
+  { icon: BookOpen, accent: 'text-emerald-700', iconBox: 'border-emerald-200 bg-emerald-50 text-emerald-700', rule: 'border-emerald-100', bullet: 'bg-emerald-500' }
+];
+
+const splitReportSentences = text => String(text || '')
+  .trim()
+  .split(/(?<=[.!?])\s+/)
+  .filter(Boolean);
+
+const splitReportBulletLines = text => String(text || '')
+  .split(/\s*\/\s*/)
+  .map(line => line.trim())
+  .filter(Boolean);
+
+const createEducationMarkerIcon = ({ selected = false, dimmed = false, color = '#4f46e5' } = {}) => {
+  const size = selected ? 42 : 32;
+  const background = dimmed ? '#94a3b8' : color;
+  const opacity = dimmed ? 0.55 : 1;
+  return L.divIcon({
+    className: '',
+    html: `<span aria-hidden="true" style="display:flex;width:${size}px;height:${size}px;align-items:center;justify-content:center;border:${selected ? 3 : 2}px solid white;border-radius:9999px;background:${background};box-shadow:0 ${selected ? 7 : 4}px ${selected ? 18 : 12}px rgba(15,23,42,.${selected ? 38 : 28});font-size:${selected ? 20 : 16}px;opacity:${opacity}">🎓</span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 2)]
+  });
+};
+
+const createCultureFacilityMarkerIcon = ({ selected = false, dimmed = false, color = '#0f766e', typeKey = 'other' } = {}) => {
+  const size = selected ? 42 : 32;
+  const glyph = typeKey === 'library' ? '📚' : '🏛️';
+  return L.divIcon({
+    className: '',
+    html: `<span aria-hidden="true" style="display:flex;width:${size}px;height:${size}px;align-items:center;justify-content:center;border:${selected ? 3 : 2}px solid white;border-radius:9999px;background:${dimmed ? '#94a3b8' : color};box-shadow:0 ${selected ? 7 : 4}px ${selected ? 18 : 12}px rgba(15,23,42,.${selected ? 38 : 28});font-size:${selected ? 19 : 15}px;opacity:${dimmed ? 0.55 : 1}">${glyph}</span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 2)]
+  });
+};
+
+const districtSectionTabs = [
+  { key: 'overview', label: '종합' },
+  { key: 'population', label: '인구' },
+  { key: 'cultureEducation', label: '문화·교육' },
+  { key: 'welfare', label: '생활·복지' }
+];
+const cultureEducationSubTabs = [
+  { key: 'culture', number: '01·02', label: '문화 기반·향유·참여', icon: Theater, active: 'border-emerald-300 bg-emerald-600 text-white', iconColor: 'text-emerald-700' },
+  { key: 'education', number: '03', label: '교육 환경', icon: GraduationCap, active: 'border-indigo-300 bg-indigo-600 text-white', iconColor: 'text-indigo-600' }
+];
+
+const sumPopulationAgeRange = (ageDistribution = {}, minAge, maxAge = null) => (
+  Object.entries(ageDistribution).reduce((sum, [label, rawValue]) => {
+    const range = String(label).match(/^(\d{1,3})[-~](\d{1,3})세$/);
+    const over = String(label).match(/^(\d{1,3})세 이상$/);
+    const startAge = range ? Number(range[1]) : over ? Number(over[1]) : null;
+    if (startAge === null || startAge < minAge || (maxAge !== null && startAge > maxAge)) return sum;
+    return sum + Number(rawValue || 0);
+  }, 0)
+);
+
+const getSafeExternalUrl = (value) => {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+};
+
 // 서울시 25개 자치구 목록 정렬
 const guList = [...new Set(libraryData.libraries.map(lib => lib.gu))].sort();
-
-const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY || '';
-const KAKAO_SDK_SCRIPT_ID = 'kakao-map-sdk';
-let kakaoMapSdkPromise = null;
 
 function PopulationSource({ population, className = '' }) {
   const showDelayed = population?.source === 'SPOP_LOCAL_RESD_DONG' && population?.isDelayed;
@@ -69,49 +196,28 @@ function PopulationSource({ population, className = '' }) {
   );
 }
 
-const loadKakaoMapSdk = () => {
-  if (window.kakao?.maps) {
-    return Promise.resolve(window.kakao);
-  }
+const publicPlaceMarkerColors = {
+  PO3: '#4f46e5',
+  CT1: '#e11d48'
+};
+const getPublicPlaceKey = place => `${place.name || ''}|${place.address || ''}|${place.categoryCode || place.category || ''}`;
 
-  if (kakaoMapSdkPromise) {
-    return kakaoMapSdkPromise;
-  }
-
-  if (!KAKAO_JS_KEY) {
-    return Promise.reject(new Error('카카오 지도 JavaScript 키가 설정되지 않았습니다.'));
-  }
-
-  kakaoMapSdkPromise = new Promise((resolve, reject) => {
-    const existingScript = document.getElementById(KAKAO_SDK_SCRIPT_ID);
-    const finishLoad = () => {
-      if (!window.kakao?.maps?.load) {
-        reject(new Error('카카오 지도 SDK 객체가 준비되지 않았습니다.'));
-        return;
-      }
-      window.kakao.maps.load(() => resolve(window.kakao));
-    };
-
-    if (existingScript) {
-      existingScript.addEventListener('load', finishLoad, { once: true });
-      existingScript.addEventListener('error', () => reject(new Error('카카오 지도 SDK 로드에 실패했습니다.')), { once: true });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = KAKAO_SDK_SCRIPT_ID;
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
-    script.async = true;
-    script.onload = finishLoad;
-    script.onerror = () => {
-      kakaoMapSdkPromise = null;
-      reject(new Error('카카오 지도 SDK 로드에 실패했습니다.'));
-    };
-
-    document.head.appendChild(script);
+const createLibraryAnalysisMarkerIcon = (kind = 'place', { categoryCode, selected = false, dimmed = false } = {}) => {
+  const styles = {
+    target: { color: '#1d4ed8', glyph: '📚', size: 42 },
+    place: { color: publicPlaceMarkerColors[categoryCode] || '#64748b', glyph: '🏛️', size: 32 },
+    event: { color: '#059669', glyph: '🎭', size: 34 }
+  };
+  const style = styles[kind] || styles.place;
+  const size = selected ? style.size + 10 : style.size;
+  const color = dimmed ? '#94a3b8' : style.color;
+  return L.divIcon({
+    className: '',
+    html: `<span aria-hidden="true" style="display:flex;width:${size}px;height:${size}px;align-items:center;justify-content:center;border:${selected ? 4 : 3}px solid white;border-radius:9999px;background:${color};box-shadow:0 ${selected ? 8 : 5}px ${selected ? 20 : 15}px rgba(15,23,42,.${selected ? 4 : 3});font-size:${size >= 40 ? 19 : 15}px;opacity:${dimmed ? 0.5 : 1}">${style.glyph}</span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 2)]
   });
-
-  return kakaoMapSdkPromise;
 };
 
 const formatInsightGeneratedAt = (value) => {
@@ -129,6 +235,8 @@ const formatInsightGeneratedAt = (value) => {
 
 function App() {
   const [activeTab, setActiveTab] = useState('district'); // 'district' | 'library'
+  const [districtSectionTab, setDistrictSectionTab] = useState('overview');
+  const [cultureEducationSubTab, setCultureEducationSubTab] = useState('culture');
   const [selectedGu, setSelectedGu] = useState('강남구');
   const [selectedLibrary, setSelectedLibrary] = useState('');
   const [librariesInGu, setLibrariesInGu] = useState([]);
@@ -142,8 +250,18 @@ function App() {
   const [cultureReferenceView, setCultureReferenceView] = useState('general');
   const [educationCategory, setEducationCategory] = useState('elementary');
   const [educationPage, setEducationPage] = useState(0);
+  const [selectedEducationSchoolKey, setSelectedEducationSchoolKey] = useState(null);
+  const [cultureEventFilter, setCultureEventFilter] = useState('all');
+  const [cultureEventCategory, setCultureEventCategory] = useState('all');
+  const [cultureEventSort, setCultureEventSort] = useState('statusDate');
+  const [cultureEventPage, setCultureEventPage] = useState(0);
+  const [cultureFacilityCategory, setCultureFacilityCategory] = useState('all');
+  const [cultureFacilityPage, setCultureFacilityPage] = useState(0);
+  const [selectedCultureFacilityKey, setSelectedCultureFacilityKey] = useState(null);
   const [publicPlaceCategory, setPublicPlaceCategory] = useState('all');
   const [publicPlacePage, setPublicPlacePage] = useState(0);
+  const [selectedPublicPlaceKey, setSelectedPublicPlaceKey] = useState(null);
+  const [nearbyEventSourceFilter, setNearbyEventSourceFilter] = useState('all');
   
   // API 로딩 및 데이터 상태
   const [loading, setLoading] = useState(false);
@@ -151,21 +269,33 @@ function App() {
   const [districtData, setDistrictData] = useState(null);
   const [libraryDataDetail, setLibraryDataDetail] = useState(null);
   const [populationMode, setPopulationMode] = useState('resident');
+  const [dongPopulationSort, setDongPopulationSort] = useState('total');
+  const [selectedDongPopulation, setSelectedDongPopulation] = useState('');
   const [llmHarness, setLlmHarness] = useState(null);
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState(null);
-  const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
-  const [llmProviderMode, setLlmProviderMode] = useState('cache');
-  const [llmRefreshNonce, setLlmRefreshNonce] = useState(0);
-  const [regeneratingSection, setRegeneratingSection] = useState(null);
 
   // 지도 인스턴스 참조
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
+  const publicPlaceMarkerEntriesRef = useRef(new Map());
   const [mapError, setMapError] = useState(null);
-  const markersRef = useRef([]);
-  const circlesRef = useRef([]);
+  const educationMapContainerRef = useRef(null);
+  const educationMapInstanceRef = useRef(null);
+  const educationMarkerEntriesRef = useRef(new Map());
+  const [educationMapError, setEducationMapError] = useState(null);
+  const [educationMappedCount, setEducationMappedCount] = useState(0);
+  const cultureFacilityMapContainerRef = useRef(null);
+  const cultureFacilityMapInstanceRef = useRef(null);
+  const cultureFacilityMarkerEntriesRef = useRef(new Map());
+  const [cultureFacilityMapError, setCultureFacilityMapError] = useState(null);
+  const [cultureFacilityMappedCount, setCultureFacilityMappedCount] = useState(0);
+
+  useEffect(() => {
+    if (!cultureEducationSubTabs.some(tab => tab.key === cultureEducationSubTab)) {
+      setCultureEducationSubTab('culture');
+    }
+  }, [cultureEducationSubTab]);
 
   // 자치구 변경 시 해당 자치구의 도서관 목록 필터링
   useEffect(() => {
@@ -184,7 +314,7 @@ function App() {
     setError(null);
     try {
       const res = await axios.get(`/api/insight-api`, {
-        params: { type: 'district', gu: guName }
+        params: { type: 'district', gu: guName, cacheVersion: 'culture-events-kcisa-v7' }
       });
       setDistrictData(res.data);
     } catch (err) {
@@ -202,7 +332,7 @@ function App() {
     setError(null);
     try {
       const res = await axios.get(`/api/insight-api`, {
-        params: { type: 'library', gu: guName, library: libName }
+        params: { type: 'library', gu: guName, library: libName, cacheVersion: 'nearby-events-dual-source-v2' }
       });
       if (libraryTargetModeRef.current !== 'library') return;
       setLibraryDataDetail(res.data);
@@ -219,7 +349,7 @@ function App() {
     setError(null);
     try {
       const res = await axios.get(`/api/insight-api`, {
-        params: { type: 'location', gu: guName, lat, lng }
+        params: { type: 'location', gu: guName, lat, lng, cacheVersion: 'nearby-events-dual-source-v2' }
       });
       if (libraryTargetModeRef.current !== 'address') return;
       setLibraryDataDetail({
@@ -250,32 +380,10 @@ function App() {
     setLibraryDataDetail(null);
     setResolvedAddress('');
     try {
-      const kakao = await loadKakaoMapSdk();
-      if (!kakao.maps.services?.Geocoder) {
-        throw new Error('주소 검색 서비스를 불러오지 못했습니다.');
-      }
-
-      const geocoder = new kakao.maps.services.Geocoder();
-      const results = await new Promise((resolve, reject) => {
-        geocoder.addressSearch(query, (items, status) => {
-          if (status === kakao.maps.services.Status.OK && items.length > 0) {
-            resolve(items);
-            return;
-          }
-          if (status === kakao.maps.services.Status.ZERO_RESULT) {
-            reject(new Error('주소를 찾을 수 없습니다. 도로명 또는 지번 주소를 확인하세요.'));
-            return;
-          }
-          reject(new Error('주소 검색 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.'));
-        });
+      const response = await axios.get('/api/insight-api', {
+        params: { type: 'geocode', address: query }
       });
-
-      const match = results[0];
-      const addressInfo = match.road_address || match.address;
-      const guName = addressInfo?.region_2depth_name?.trim();
-      const normalizedAddress = match.road_address?.address_name || match.address?.address_name || query;
-      const lat = Number.parseFloat(match.y);
-      const lng = Number.parseFloat(match.x);
+      const { gu: guName, address: normalizedAddress, lat, lng } = response.data || {};
 
       if (!guList.includes(guName)) {
         throw new Error('서울시 25개 자치구에 해당하는 주소만 분석할 수 있습니다.');
@@ -288,7 +396,7 @@ function App() {
       await fetchLocationData({ guName, lat, lng, address: normalizedAddress });
     } catch (err) {
       console.error(err);
-      setAddressError(err.message || '주소 분석에 실패했습니다.');
+      setAddressError(err.response?.data?.error || err.message || '주소 분석에 실패했습니다.');
     } finally {
       setAddressSearching(false);
     }
@@ -316,162 +424,170 @@ function App() {
   useEffect(() => {
     setPublicPlaceCategory('all');
     setPublicPlacePage(0);
+    setSelectedPublicPlaceKey(null);
+    setNearbyEventSourceFilter('all');
   }, [selectedLibrary, libraryTargetMode, resolvedAddress]);
 
   useEffect(() => {
     setPublicPlacePage(0);
+    setSelectedPublicPlaceKey(null);
   }, [publicPlaceCategory]);
 
   useEffect(() => {
+    setSelectedPublicPlaceKey(null);
+  }, [publicPlacePage]);
+
+  useEffect(() => {
     setEducationPage(0);
+    setSelectedEducationSchoolKey(null);
   }, [educationCategory, selectedGu]);
 
   useEffect(() => {
-    setReportPreviewOpen(false);
-    setLlmProviderMode('cache');
+    setSelectedEducationSchoolKey(null);
+  }, [educationPage]);
+
+  useEffect(() => {
+    setCultureEventPage(0);
+  }, [cultureEventFilter, cultureEventCategory, cultureEventSort, selectedGu]);
+
+  useEffect(() => {
+    setCultureEventCategory('all');
   }, [selectedGu]);
 
-  // 카카오 맵 SDK 동적 로딩
   useEffect(() => {
-    let cancelled = false;
-    loadKakaoMapSdk()
-      .then(() => {
-        if (cancelled) return;
-        setMapLoaded(true);
-        setMapError(null);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.warn('카카오 지도 SDK 로딩 경고:', err);
-        setMapError('카카오 지도 SDK 로드에 실패했습니다. 키 유효성 및 도메인 설정을 확인하세요.');
-      });
+    setCultureFacilityPage(0);
+    setSelectedCultureFacilityKey(null);
+  }, [cultureFacilityCategory, selectedGu]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useEffect(() => {
+    setSelectedCultureFacilityKey(null);
+  }, [cultureFacilityPage]);
 
   // 개별 도서관 지도 렌더링 및 오버레이 설정
   useEffect(() => {
-    if (activeTab !== 'library' || !mapLoaded || !libraryDataDetail || !mapContainerRef.current) return;
+    const clearMap = () => {
+      if (mapInstanceRef.current) mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+      publicPlaceMarkerEntriesRef.current.clear();
+    };
+
+    if (activeTab !== 'library' || !libraryDataDetail || !mapContainerRef.current) {
+      clearMap();
+      return clearMap;
+    }
 
     try {
-      if (!window.kakao || !window.kakao.maps || !window.kakao.maps.LatLng) {
-        throw new Error('카카오 지도 객체(LatLng)가 로드되지 않았습니다.');
-      }
-
       const { lat, lng } = libraryDataDetail.coordinates || {};
-      if (!lat || !lng) {
+      const center = [Number(lat), Number(lng)];
+      if (!center.every(Number.isFinite)) {
         throw new Error('기준 위치 좌표 정보가 올바르지 않습니다.');
       }
 
       const container = mapContainerRef.current;
-      
-      // DOM 충돌 및 불일치 예방을 위해 매번 컨테이너를 비우고 새로 초기화
+      clearMap();
       container.innerHTML = '';
-      
-      const options = {
-        center: new window.kakao.maps.LatLng(lat, lng),
-        level: 5 // 확대 레벨
-      };
-
-      // 기존 마커 및 원 데이터 메모리 초기화
-      markersRef.current = [];
-      circlesRef.current = [];
-
-      // 지도 신규 바인딩
-      const map = new window.kakao.maps.Map(container, options);
+      const map = L.map(container, { scrollWheelZoom: true, minZoom: 12, maxZoom: 18 }).setView(center, 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        minZoom: 12,
+        maxZoom: 18
+      }).addTo(map);
       mapInstanceRef.current = map;
 
-      // 1. 도서관 중심 마커 추가
-      const libraryMarker = new window.kakao.maps.Marker({
-        position: options.center,
-        map: map,
-        title: libraryDataDetail.targetLabel || libraryDataDetail.library
-      });
-      markersRef.current.push(libraryMarker);
+      const createPopupContent = (title, detail, accentClass) => {
+        const content = document.createElement('div');
+        const name = document.createElement('strong');
+        name.className = 'block text-xs text-slate-900';
+        name.textContent = title;
+        const description = document.createElement('span');
+        description.className = `mt-1 block text-[10px] font-bold ${accentClass}`;
+        description.textContent = detail;
+        content.append(name, description);
+        return content;
+      };
 
-      // 2. 반경 써클 추가 (1km: 빨강, 2km: 파랑)
-      const circle1km = new window.kakao.maps.Circle({
-        center: options.center,
+      L.circle(center, {
         radius: 1000,
-        strokeWeight: 2,
-        strokeColor: '#ef4444',
-        strokeOpacity: 0.8,
+        color: '#ef4444',
+        weight: 2,
+        opacity: 0.8,
         fillColor: '#ef4444',
-        fillOpacity: 0.05
-      });
-      circle1km.setMap(map);
-      circlesRef.current.push(circle1km);
-
-      const circle2km = new window.kakao.maps.Circle({
-        center: options.center,
+        fillOpacity: 0.04
+      }).addTo(map);
+      const circle2km = L.circle(center, {
         radius: 2000,
-        strokeWeight: 2,
-        strokeColor: '#3b82f6',
-        strokeOpacity: 0.8,
+        color: '#3b82f6',
+        weight: 2,
+        opacity: 0.8,
         fillColor: '#3b82f6',
-        fillOpacity: 0.08
-      });
-      circle2km.setMap(map);
-      circlesRef.current.push(circle2km);
+        fillOpacity: 0.06
+      }).addTo(map);
 
-      // 3. 주변 공공기관/문화시설 마커 표시
+      L.marker(center, {
+        title: libraryDataDetail.targetLabel || libraryDataDetail.library || '기준 위치',
+        icon: createLibraryAnalysisMarkerIcon('target'),
+        zIndexOffset: 1000
+      }).addTo(map).bindPopup(createPopupContent(
+        libraryDataDetail.targetLabel || libraryDataDetail.library || '기준 위치',
+        '분석 기준 위치',
+        'text-blue-700'
+      ));
+
       const publicPlaces = libraryDataDetail.infrastructure.publicPlaces || [];
       publicPlaces.forEach(place => {
-        if (!place.lat || !place.lng) return;
-        const markerPosition = new window.kakao.maps.LatLng(place.lat, place.lng);
-        const marker = new window.kakao.maps.Marker({
-          position: markerPosition,
-          map: map,
-          title: place.name
-        });
-        
-        // 인포윈도우 추가
-        const infowindow = new window.kakao.maps.InfoWindow({
-          content: `<div style="padding:5px;font-size:12px;color:#333;width:160px;text-align:center;"><b>${place.name}</b><br><span style="font-size:10px;color:#777;">${place.category || '시설'} · ${place.distance}m</span></div>`
-        });
-        window.kakao.maps.event.addListener(marker, 'mouseover', () => {
-          infowindow.open(map, marker);
-        });
-        window.kakao.maps.event.addListener(marker, 'mouseout', () => {
-          infowindow.close();
-        });
-
-        markersRef.current.push(marker);
+        const position = [Number(place.lat), Number(place.lng)];
+        if (!position.every(Number.isFinite)) return;
+        const placeKey = getPublicPlaceKey(place);
+        const marker = L.marker(position, {
+          title: place.name,
+          icon: createLibraryAnalysisMarkerIcon('place', { categoryCode: place.categoryCode })
+        }).addTo(map).bindPopup(createPopupContent(
+          place.name || '주변 시설',
+          `${place.category || '시설'} · ${Number(place.distance || 0).toLocaleString()}m`,
+          place.categoryCode === 'CT1' ? 'text-rose-700' : 'text-indigo-700'
+        ));
+        marker.on('click', () => setSelectedPublicPlaceKey(placeKey));
+        publicPlaceMarkerEntriesRef.current.set(placeKey, { marker, categoryCode: place.categoryCode });
       });
 
-      // 4. 주변 문화행사 마커 표시
       const nearbyEvents = libraryDataDetail.infrastructure.nearbyEvents || [];
       nearbyEvents.forEach(event => {
-        if (!event.lat || !event.lng) return;
-        const markerPosition = new window.kakao.maps.LatLng(event.lat, event.lng);
-        
-        const marker = new window.kakao.maps.Marker({
-          position: markerPosition,
-          map: map,
-          title: event.title
-        });
-
-        const infowindow = new window.kakao.maps.InfoWindow({
-          content: `<div style="padding:5px;font-size:12px;color:#1e293b;width:180px;"><b>${event.title}</b><br><span style="font-size:10px;color:#059669;">${event.place}</span></div>`
-        });
-        window.kakao.maps.event.addListener(marker, 'click', () => {
-          infowindow.open(map, marker);
-        });
-        window.kakao.maps.event.addListener(map, 'click', () => {
-          infowindow.close();
-        });
-
-        markersRef.current.push(marker);
+        const position = [Number(event.lat), Number(event.lng)];
+        if (!position.every(Number.isFinite)) return;
+        L.marker(position, {
+          title: event.title,
+          icon: createLibraryAnalysisMarkerIcon('event')
+        }).addTo(map).bindPopup(createPopupContent(
+          event.title || '주변 문화행사',
+          `${event.place || '장소 확인 필요'} · ${Number(event.distance || 0).toLocaleString()}m`,
+          'text-emerald-700'
+        ));
       });
 
+      map.fitBounds(circle2km.getBounds(), { padding: [24, 24] });
       setMapError(null);
     } catch (err) {
+      clearMap();
       console.error('지도 렌더링 에러:', err);
       setMapError(err.message);
     }
-  }, [activeTab, mapLoaded, libraryDataDetail]);
+
+    return clearMap;
+  }, [activeTab, libraryDataDetail]);
+
+  useEffect(() => {
+    publicPlaceMarkerEntriesRef.current.forEach(({ marker, categoryCode }, placeKey) => {
+      const isSelected = selectedPublicPlaceKey === placeKey;
+      marker.setIcon(createLibraryAnalysisMarkerIcon('place', {
+        categoryCode,
+        selected: isSelected,
+        dimmed: Boolean(selectedPublicPlaceKey) && !isSelected
+      }));
+      marker.setZIndexOffset(isSelected ? 1000 : 0);
+      if (isSelected) marker.openPopup();
+      else marker.closePopup();
+    });
+  }, [selectedPublicPlaceKey]);
 
   const renderCompositionItems = (items) => (
     <div className="space-y-3">
@@ -501,6 +617,35 @@ function App() {
 
   const activeDistrictPopulation = districtData ? getPopulationByMode(districtData.population) : null;
   const activeLibraryPopulation = libraryDataDetail ? getPopulationByMode(libraryDataDetail.demographics) : null;
+  const sortedDongPopulationRows = useMemo(() => (
+    [...(activeDistrictPopulation?.dongBreakdown || [])]
+      .map(row => {
+        const total = Math.round(Number(row.total || 0));
+        const childrenYouth = Math.round(sumPopulationAgeRange(row.ageDistribution, 0, 19));
+        const youngMiddle = Math.round(sumPopulationAgeRange(row.ageDistribution, 20, 64));
+        const senior = Math.round(sumPopulationAgeRange(row.ageDistribution, 65));
+        const toRatio = value => total > 0 ? (value / total) * 100 : 0;
+
+        return {
+          ...row,
+          total,
+          childrenYouth,
+          childrenYouthRatio: toRatio(childrenYouth),
+          youngMiddle,
+          youngMiddleRatio: toRatio(youngMiddle),
+          senior,
+          seniorRatio: toRatio(senior)
+        };
+      })
+      .sort((a, b) => Number(b[dongPopulationSort] || 0) - Number(a[dongPopulationSort] || 0) || String(a.dong).localeCompare(String(b.dong), 'ko'))
+  ), [activeDistrictPopulation, dongPopulationSort]);
+  const selectedDongPopulationRowClass = ['senior', 'seniorRatio'].includes(dongPopulationSort)
+    ? 'bg-red-100 ring-1 ring-inset ring-red-300 [&>*]:!bg-red-100'
+    : ['childrenYouth', 'childrenYouthRatio'].includes(dongPopulationSort)
+      ? 'bg-green-100 ring-1 ring-inset ring-green-300 [&>*]:!bg-green-100'
+      : ['youngMiddle', 'youngMiddleRatio'].includes(dongPopulationSort)
+        ? 'bg-yellow-100 ring-1 ring-inset ring-yellow-300 [&>*]:!bg-yellow-100'
+        : 'bg-blue-100 ring-1 ring-inset ring-blue-300 [&>*]:!bg-blue-100';
   const isAddressTarget = libraryDataDetail?.targetType === 'address';
   const libraryTargetName = libraryDataDetail?.targetLabel || libraryDataDetail?.library || '기준 위치';
   const distanceOriginLabel = isAddressTarget ? '기준 위치' : '도서관';
@@ -512,23 +657,366 @@ function App() {
   const activeSocialSafetySection = socialSafetySections.find(section => section.key === socialSafetyView) || socialSafetySections[0];
   const activeSocialSafetyItems = getTopCompositionItems(activeSocialSafetySection?.data);
   const activeCultureReference = cultureEnjoymentReference2024.find(group => group.key === cultureReferenceView) || cultureEnjoymentReference2024[0];
+  const schoolTypeCategories = [
+    { key: 'elementary', label: '초등학교', active: 'bg-blue-50 border-blue-200 text-blue-900', count: districtData?.cultureAndEducation?.schools?.elementary || 0 },
+    { key: 'middle', label: '중학교', active: 'bg-indigo-50 border-indigo-200 text-indigo-900', count: districtData?.cultureAndEducation?.schools?.middle || 0 },
+    { key: 'high', label: '고등학교', active: 'bg-purple-50 border-purple-200 text-purple-900', count: districtData?.cultureAndEducation?.schools?.high || 0 },
+    { key: 'university', label: '대학교', active: 'bg-rose-50 border-rose-200 text-rose-900', count: districtData?.cultureAndEducation?.schools?.university || 0 }
+  ];
   const educationCategories = [
-    { key: 'elementary', label: '초등학교', color: 'text-blue-500', active: 'bg-blue-50 border-blue-200 text-blue-900', count: districtData?.cultureAndEducation?.schools?.elementary || 0 },
-    { key: 'middle', label: '중학교', color: 'text-indigo-500', active: 'bg-indigo-50 border-indigo-200 text-indigo-900', count: districtData?.cultureAndEducation?.schools?.middle || 0 },
-    { key: 'high', label: '고등학교', color: 'text-purple-500', active: 'bg-purple-50 border-purple-200 text-purple-900', count: districtData?.cultureAndEducation?.schools?.high || 0 },
-    { key: 'university', label: '대학교', color: 'text-rose-500', active: 'bg-rose-50 border-rose-200 text-rose-900', count: districtData?.cultureAndEducation?.schools?.university || 0 }
+    {
+      key: 'all',
+      label: '전체 학교',
+      active: 'bg-slate-100 border-slate-300 text-slate-900',
+      count: schoolTypeCategories.reduce((sum, category) => sum + category.count, 0)
+    },
+    ...schoolTypeCategories
   ];
   const activeEducationCategory = educationCategories.find(category => category.key === educationCategory) || educationCategories[0];
-  const activeEducationList = districtData?.cultureAndEducation?.schoolDetails?.[activeEducationCategory.key] || [];
+  const activeEducationList = useMemo(
+    () => {
+      const details = districtData?.cultureAndEducation?.schoolDetails || {};
+      const keys = educationCategory === 'all'
+        ? ['elementary', 'middle', 'high', 'university']
+        : [educationCategory];
+      return keys.flatMap(gradeKey => (
+        (details[gradeKey] || []).map(school => ({ ...school, gradeKey }))
+      ));
+    },
+    [districtData, educationCategory]
+  );
   const educationPageSize = 10;
   const educationTotalPages = Math.max(1, Math.ceil(activeEducationList.length / educationPageSize));
   const safeEducationPage = Math.min(educationPage, educationTotalPages - 1);
-  const pagedEducationList = activeEducationList.slice(
+  const pagedEducationList = useMemo(() => activeEducationList.slice(
     safeEducationPage * educationPageSize,
     safeEducationPage * educationPageSize + educationPageSize
-  );
+  ), [activeEducationList, safeEducationPage]);
   const educationRangeStart = activeEducationList.length ? safeEducationPage * educationPageSize + 1 : 0;
   const educationRangeEnd = Math.min((safeEducationPage + 1) * educationPageSize, activeEducationList.length);
+  const districtCultureEvents = useMemo(
+    () => districtData?.cultureAndEducation?.cultureEvents || [],
+    [districtData]
+  );
+  const cultureEventCounts = useMemo(() => {
+    const categoryEvents = cultureEventCategory === 'all'
+      ? districtCultureEvents
+      : districtCultureEvents.filter(eventItem => eventItem.category === cultureEventCategory);
+    return {
+      all: categoryEvents.length,
+      ongoing: categoryEvents.filter(eventItem => eventItem.status === 'ongoing').length,
+      upcoming: categoryEvents.filter(eventItem => eventItem.status === 'upcoming').length
+    };
+  }, [cultureEventCategory, districtCultureEvents]);
+  const cultureEventCategories = useMemo(() => {
+    const statusEvents = cultureEventFilter === 'all'
+      ? districtCultureEvents
+      : districtCultureEvents.filter(eventItem => eventItem.status === cultureEventFilter);
+    const counts = new Map();
+    statusEvents.forEach(eventItem => {
+      const category = eventItem.category || '기타';
+      counts.set(category, (counts.get(category) || 0) + 1);
+    });
+    return [
+      { key: 'all', label: '전체 유형', count: statusEvents.length },
+      ...[...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))
+        .map(([key, count]) => ({ key, label: key, count }))
+    ];
+  }, [cultureEventFilter, districtCultureEvents]);
+  const filteredCultureEvents = useMemo(
+    () => districtCultureEvents.filter(eventItem => (
+      (cultureEventFilter === 'all' || eventItem.status === cultureEventFilter)
+      && (cultureEventCategory === 'all' || eventItem.category === cultureEventCategory)
+    )),
+    [cultureEventFilter, cultureEventCategory, districtCultureEvents]
+  );
+  const sortedCultureEvents = useMemo(() => [...filteredCultureEvents].sort((a, b) => {
+    const titleOrder = String(a.title || '').localeCompare(String(b.title || ''), 'ko');
+    if (cultureEventSort === 'startAsc') {
+      return String(a.startDate || '9999-12-31').localeCompare(String(b.startDate || '9999-12-31')) || titleOrder;
+    }
+    if (cultureEventSort === 'startDesc') {
+      return String(b.startDate || '').localeCompare(String(a.startDate || '')) || titleOrder;
+    }
+    if (cultureEventSort === 'endAsc') {
+      return String(a.endDate || a.startDate || '9999-12-31').localeCompare(String(b.endDate || b.startDate || '9999-12-31')) || titleOrder;
+    }
+    if (cultureEventSort === 'titleAsc') return titleOrder;
+    if (cultureEventSort === 'categoryAsc') {
+      return String(a.category || '').localeCompare(String(b.category || ''), 'ko') || titleOrder;
+    }
+    const statusOrder = Number(a.status !== 'ongoing') - Number(b.status !== 'ongoing');
+    return statusOrder
+      || String(a.startDate || '9999-12-31').localeCompare(String(b.startDate || '9999-12-31'))
+      || titleOrder;
+  }), [cultureEventSort, filteredCultureEvents]);
+  const cultureEventPageSize = 8;
+  const cultureEventPageCount = Math.max(1, Math.ceil(sortedCultureEvents.length / cultureEventPageSize));
+  const safeCultureEventPage = Math.min(cultureEventPage, cultureEventPageCount - 1);
+  const visibleCultureEvents = sortedCultureEvents.slice(
+    safeCultureEventPage * cultureEventPageSize,
+    safeCultureEventPage * cultureEventPageSize + cultureEventPageSize
+  );
+  const districtCultureFacilities = useMemo(() => {
+    const kakaoFacilities = (districtData?.cultureAndEducation?.cultureFacilities || [])
+      .filter(facility => facility.typeKey !== 'library');
+    const internalLibraries = libraryData.libraries
+      .filter(library => library.gu === selectedGu && Number.isFinite(Number(library.lat)) && Number.isFinite(Number(library.lng)))
+      .map(library => ({
+        id: `internal-library:${library.name}`,
+        name: library.name,
+        address: library.address || '',
+        lat: Number(library.lat),
+        lng: Number(library.lng),
+        phone: '',
+        placeUrl: '',
+        categoryName: '내부 도서관 정보',
+        typeKey: 'library',
+        typeLabel: '도서관'
+      }));
+    return [...internalLibraries, ...kakaoFacilities];
+  }, [districtData, selectedGu]);
+  const cultureFacilityCategories = useMemo(() => cultureFacilityTypes.map(type => ({
+    ...type,
+    count: type.key === 'all'
+      ? districtCultureFacilities.length
+      : districtCultureFacilities.filter(facility => facility.typeKey === type.key).length
+  })), [districtCultureFacilities]);
+  const filteredCultureFacilities = useMemo(
+    () => cultureFacilityCategory === 'all'
+      ? districtCultureFacilities
+      : districtCultureFacilities.filter(facility => facility.typeKey === cultureFacilityCategory),
+    [cultureFacilityCategory, districtCultureFacilities]
+  );
+  const educationMapLibraries = useMemo(
+    () => districtCultureFacilities.filter(facility => facility.typeKey === 'library'),
+    [districtCultureFacilities]
+  );
+  const cultureFacilityMapFacilities = useMemo(
+    () => cultureFacilityCategory === 'all' || cultureFacilityCategory === 'library'
+      ? filteredCultureFacilities
+      : [...educationMapLibraries, ...filteredCultureFacilities],
+    [cultureFacilityCategory, educationMapLibraries, filteredCultureFacilities]
+  );
+  const fixedCultureFacilityLibraryCount = cultureFacilityCategory === 'all' || cultureFacilityCategory === 'library'
+    ? 0
+    : educationMapLibraries.length;
+  const cultureFacilityPageSize = 8;
+  const cultureFacilityPageCount = Math.max(1, Math.ceil(filteredCultureFacilities.length / cultureFacilityPageSize));
+  const safeCultureFacilityPage = Math.min(cultureFacilityPage, cultureFacilityPageCount - 1);
+  const visibleCultureFacilities = filteredCultureFacilities.slice(
+    safeCultureFacilityPage * cultureFacilityPageSize,
+    safeCultureFacilityPage * cultureFacilityPageSize + cultureFacilityPageSize
+  );
+  const cultureFacilityRangeStart = filteredCultureFacilities.length ? safeCultureFacilityPage * cultureFacilityPageSize + 1 : 0;
+  const cultureFacilityRangeEnd = Math.min((safeCultureFacilityPage + 1) * cultureFacilityPageSize, filteredCultureFacilities.length);
+
+  useEffect(() => {
+    const clearEducationMap = () => {
+      if (educationMapInstanceRef.current) {
+        educationMapInstanceRef.current.remove();
+      }
+      educationMapInstanceRef.current = null;
+      educationMarkerEntriesRef.current.clear();
+    };
+
+    if (
+      activeTab !== 'district'
+      || districtSectionTab !== 'cultureEducation'
+      || cultureEducationSubTab !== 'education'
+      || !educationMapContainerRef.current
+      || activeEducationList.length === 0
+    ) {
+      clearEducationMap();
+      setEducationMappedCount(0);
+      return () => {
+        clearEducationMap();
+      };
+    }
+
+    try {
+      const schoolsWithCoordinates = activeEducationList.filter(school => (
+        Number.isFinite(Number(school.lat)) && Number.isFinite(Number(school.lng))
+      ));
+      if (schoolsWithCoordinates.length === 0) {
+        throw new Error('현재 목록의 학교 위치 좌표가 준비되지 않았습니다. 데이터를 다시 불러와 주세요.');
+      }
+
+      clearEducationMap();
+      educationMapContainerRef.current.innerHTML = '';
+      const map = L.map(educationMapContainerRef.current, { scrollWheelZoom: true, minZoom: 11, maxZoom: 17 });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        minZoom: 11,
+        maxZoom: 17
+      }).addTo(map);
+      educationMapInstanceRef.current = map;
+
+      const bounds = [];
+      schoolsWithCoordinates.forEach(school => {
+        const position = [Number(school.lat), Number(school.lng)];
+        const schoolKey = `${school.name}|${school.address}`;
+        const infoContent = document.createElement('div');
+        const name = document.createElement('strong');
+        name.className = 'block text-xs text-slate-900';
+        name.textContent = school.name || '교육기관';
+        const category = document.createElement('span');
+        category.className = 'mt-1 block text-[10px] font-bold';
+        category.style.color = educationMarkerColors[school.gradeKey] || '#475569';
+        category.textContent = school.category || educationGradeLabels[school.gradeKey] || '학교';
+        const address = document.createElement('span');
+        address.className = 'mt-1 block text-[10px] leading-relaxed text-slate-500';
+        address.textContent = school.address || '주소 정보 없음';
+        infoContent.append(name, category, address);
+        const marker = L.marker(position, {
+          title: school.name,
+          icon: createEducationMarkerIcon({ color: educationMarkerColors[school.gradeKey] })
+        }).addTo(map).bindPopup(infoContent);
+        marker.on('click', () => setSelectedEducationSchoolKey(schoolKey));
+        educationMarkerEntriesRef.current.set(schoolKey, { marker, gradeKey: school.gradeKey });
+        bounds.push(position);
+      });
+
+      educationMapLibraries.forEach(library => {
+        const position = [Number(library.lat), Number(library.lng)];
+        const infoContent = document.createElement('div');
+        const name = document.createElement('strong');
+        name.className = 'block text-xs text-slate-900';
+        name.textContent = library.name || '도서관';
+        const category = document.createElement('span');
+        category.className = 'mt-1 block text-[10px] font-bold text-emerald-700';
+        category.textContent = '도서관';
+        const address = document.createElement('span');
+        address.className = 'mt-1 block text-[10px] leading-relaxed text-slate-500';
+        address.textContent = library.address || '주소 정보 없음';
+        infoContent.append(name, category, address);
+        L.marker(position, {
+          title: library.name,
+          icon: createCultureFacilityMarkerIcon({ color: cultureFacilityColors.library, typeKey: 'library' })
+        }).addTo(map).bindPopup(infoContent);
+        bounds.push(position);
+      });
+
+      if (bounds.length === 1) map.setView(bounds[0], 15);
+      else map.fitBounds(bounds, { padding: [28, 28], maxZoom: 15 });
+      setEducationMappedCount(schoolsWithCoordinates.length);
+      setEducationMapError(null);
+    } catch (err) {
+      clearEducationMap();
+      setEducationMappedCount(0);
+      setEducationMapError(err.message || '교육기관 지도를 표시하지 못했습니다.');
+    }
+
+    return () => {
+      clearEducationMap();
+    };
+  }, [activeTab, districtSectionTab, cultureEducationSubTab, activeEducationList, educationMapLibraries]);
+
+  useEffect(() => {
+    educationMarkerEntriesRef.current.forEach(({ marker, gradeKey }, schoolKey) => {
+      const isSelected = selectedEducationSchoolKey === schoolKey;
+      marker.setIcon(createEducationMarkerIcon({
+        selected: isSelected,
+        dimmed: Boolean(selectedEducationSchoolKey) && !isSelected,
+        color: educationMarkerColors[gradeKey]
+      }));
+      marker.setZIndexOffset(isSelected ? 1000 : 0);
+      if (isSelected) marker.openPopup();
+      else marker.closePopup();
+    });
+  }, [selectedEducationSchoolKey]);
+
+  useEffect(() => {
+    const clearCultureFacilityMap = () => {
+      if (cultureFacilityMapInstanceRef.current) cultureFacilityMapInstanceRef.current.remove();
+      cultureFacilityMapInstanceRef.current = null;
+      cultureFacilityMarkerEntriesRef.current.clear();
+    };
+
+    if (
+      activeTab !== 'district'
+      || districtSectionTab !== 'cultureEducation'
+      || cultureEducationSubTab !== 'culture'
+      || !cultureFacilityMapContainerRef.current
+      || cultureFacilityMapFacilities.length === 0
+    ) {
+      clearCultureFacilityMap();
+      setCultureFacilityMappedCount(0);
+      return clearCultureFacilityMap;
+    }
+
+    try {
+      const facilitiesWithCoordinates = cultureFacilityMapFacilities.filter(facility => (
+        Number.isFinite(Number(facility.lat)) && Number.isFinite(Number(facility.lng))
+      ));
+      if (facilitiesWithCoordinates.length === 0) throw new Error('선택한 문화시설의 위치 좌표가 없습니다.');
+
+      clearCultureFacilityMap();
+      cultureFacilityMapContainerRef.current.innerHTML = '';
+      const map = L.map(cultureFacilityMapContainerRef.current, { scrollWheelZoom: true, minZoom: 11, maxZoom: 17 });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        minZoom: 11,
+        maxZoom: 17
+      }).addTo(map);
+      cultureFacilityMapInstanceRef.current = map;
+
+      const bounds = [];
+      facilitiesWithCoordinates.forEach(facility => {
+        const position = [Number(facility.lat), Number(facility.lng)];
+        const facilityKey = String(facility.id || `${facility.name}|${facility.address}`);
+        const infoContent = document.createElement('div');
+        const name = document.createElement('strong');
+        name.className = 'block text-xs text-slate-900';
+        name.textContent = facility.name || '문화시설';
+        const category = document.createElement('span');
+        category.className = 'mt-1 block text-[10px] font-bold';
+        category.style.color = cultureFacilityColors[facility.typeKey] || cultureFacilityColors.other;
+        category.textContent = facility.typeLabel || '문화시설';
+        const address = document.createElement('span');
+        address.className = 'mt-1 block text-[10px] leading-relaxed text-slate-500';
+        address.textContent = facility.address || '주소 정보 없음';
+        infoContent.append(name, category, address);
+        const marker = L.marker(position, {
+          title: facility.name,
+          icon: createCultureFacilityMarkerIcon({
+            color: cultureFacilityColors[facility.typeKey] || cultureFacilityColors.other,
+            typeKey: facility.typeKey
+          })
+        }).addTo(map).bindPopup(infoContent);
+        marker.on('click', () => setSelectedCultureFacilityKey(facilityKey));
+        cultureFacilityMarkerEntriesRef.current.set(facilityKey, { marker, typeKey: facility.typeKey });
+        bounds.push(position);
+      });
+
+      if (bounds.length === 1) map.setView(bounds[0], 15);
+      else map.fitBounds(bounds, { padding: [28, 28], maxZoom: 15 });
+      setCultureFacilityMappedCount(facilitiesWithCoordinates.length);
+      setCultureFacilityMapError(null);
+    } catch (err) {
+      clearCultureFacilityMap();
+      setCultureFacilityMappedCount(0);
+      setCultureFacilityMapError(err.message || '문화시설 지도를 표시하지 못했습니다.');
+    }
+
+    return clearCultureFacilityMap;
+  }, [activeTab, districtSectionTab, cultureEducationSubTab, cultureFacilityMapFacilities]);
+
+  useEffect(() => {
+    cultureFacilityMarkerEntriesRef.current.forEach(({ marker, typeKey }, facilityKey) => {
+      const isSelected = selectedCultureFacilityKey === facilityKey;
+      marker.setIcon(createCultureFacilityMarkerIcon({
+        selected: isSelected,
+        dimmed: Boolean(selectedCultureFacilityKey) && !isSelected && typeKey !== 'library',
+        color: cultureFacilityColors[typeKey] || cultureFacilityColors.other,
+        typeKey
+      }));
+      marker.setZIndexOffset(isSelected ? 1000 : 0);
+      if (isSelected) marker.openPopup();
+      else marker.closePopup();
+    });
+  }, [selectedCultureFacilityKey]);
   const groupedPublicPlaces = useMemo(() => {
     const places = libraryDataDetail?.infrastructure?.publicPlaces || [];
     return places.reduce((groups, place) => {
@@ -554,12 +1042,20 @@ function App() {
   const publicPlacePageCount = Math.max(1, Math.ceil(filteredPublicPlaces.length / 5));
   const safePublicPlacePage = Math.min(publicPlacePage, publicPlacePageCount - 1);
   const visiblePublicPlaces = filteredPublicPlaces.slice(safePublicPlacePage * 5, safePublicPlacePage * 5 + 5);
+  const nearbyCultureEvents = libraryDataDetail?.infrastructure?.nearbyEvents || [];
+  const nearbyEventSourceCounts = {
+    all: nearbyCultureEvents.length,
+    seoul: nearbyCultureEvents.filter(eventItem => String(eventItem.source || '').includes('seoul')).length,
+    kcisa: nearbyCultureEvents.filter(eventItem => String(eventItem.source || '').includes('kcisa')).length
+  };
+  const filteredNearbyCultureEvents = nearbyEventSourceFilter === 'all'
+    ? nearbyCultureEvents
+    : nearbyCultureEvents.filter(eventItem => String(eventItem.source || '').includes(nearbyEventSourceFilter));
   const insightCacheStatus = llmHarness?.cacheStatus;
   const sectionCacheStatus = llmHarness?.sectionCacheStatus;
   const insightCacheHit = Boolean(insightCacheStatus?.hit);
   const sectionCacheHit = Boolean(sectionCacheStatus?.hit);
   const insightCacheUnavailable = insightCacheStatus?.available === false;
-  const insightCanGenerate = Boolean(insightCacheStatus?.canGenerate);
   const insightSnapshotStale = insightCacheStatus?.reason === 'latest_gu_cache_hit_snapshot_mismatch';
   const sectionSnapshotStale = Boolean(sectionCacheStatus?.staleSnapshot)
     || sectionCacheStatus?.reason === 'latest_section_cache_hit_snapshot_mismatch';
@@ -619,6 +1115,9 @@ function App() {
   };
   const activeSocialSafetySegmentInsight = socialSafetyAiInsight?.segments?.[socialSafetyView] || null;
   const activeSocialSafetySegmentTone = socialSafetySegmentToneByKey[socialSafetyView] || 'indigo';
+  const getReportCoreInterpretation = (sectionNumber) => (
+    llmHarness?.report?.sections?.find(section => section.heading?.startsWith(`${sectionNumber}.`))?.body || ''
+  );
   const insightModelBadges = getModelRecommendationBadges(
     llmHarness?.insight?.modelRecommendation || {
       defaultModel: 'gpt-5.6-luna',
@@ -626,31 +1125,6 @@ function App() {
       escalationModel: 'gpt-5.6-terra'
     }
   ).slice(0, 3);
-
-  const regenerateInterpretationSection = (sectionKey) => {
-    if (!districtData || regeneratingSection) return;
-    setRegeneratingSection(sectionKey);
-    setLlmError(null);
-
-    axios.post('/api/llm-harness', {
-      type: 'district_screen',
-      provider: 'direct-openai',
-      forceGenerate: true,
-      regenerateSections: [sectionKey],
-      districtData,
-      cultureMetrics: selectedCultureMetrics || {}
-    })
-      .then((res) => {
-        setLlmHarness(res.data);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLlmError('선택 섹션 AI 재생성에 실패했습니다. API 키와 함수 로그를 확인해 주세요.');
-      })
-      .finally(() => {
-        setRegeneratingSection(null);
-      });
-  };
 
   useEffect(() => {
     if (activeTab !== 'district' || !districtData) {
@@ -666,10 +1140,15 @@ function App() {
 
     axios.post('/api/llm-harness', {
       type: 'district_screen',
-      provider: llmProviderMode,
-      forceGenerate: ['direct-openai', 'direct-gemini', 'direct-anthropic', 'openai', 'gemini', 'anthropic', 'netlify-ai-gateway'].includes(llmProviderMode),
+      provider: 'cache',
+      forceGenerate: false,
       districtData,
-      cultureMetrics: selectedCultureMetrics || {}
+      cultureMetrics: selectedCultureMetrics
+        ? {
+            ...selectedCultureMetrics,
+            cultureEnjoymentReference2024: cultureEnjoymentAiReference2024
+          }
+        : {}
     })
       .then((res) => {
         if (cancelled) return;
@@ -688,7 +1167,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, districtData, selectedCultureMetrics, llmProviderMode, llmRefreshNonce]);
+  }, [activeTab, districtData, selectedCultureMetrics]);
 
   const downloadDistrictReportMarkdown = () => {
     const markdown = llmHarness?.report?.markdown;
@@ -705,17 +1184,44 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleDistrictSectionTabKeyDown = (event, currentIndex) => {
+    const lastIndex = districtSectionTabs.length - 1;
+    let nextIndex;
+
+    if (event.key === 'ArrowRight') nextIndex = currentIndex === lastIndex ? 0 : currentIndex + 1;
+    else if (event.key === 'ArrowLeft') nextIndex = currentIndex === 0 ? lastIndex : currentIndex - 1;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = lastIndex;
+    else return;
+
+    event.preventDefault();
+    const nextTab = districtSectionTabs[nextIndex];
+    setDistrictSectionTab(nextTab.key);
+    window.requestAnimationFrame(() => document.getElementById(`district-tab-${nextTab.key}`)?.focus());
+  };
+
+  const handleCultureEducationSubTabKeyDown = (event, currentIndex) => {
+    const lastIndex = cultureEducationSubTabs.length - 1;
+    let nextIndex;
+    if (event.key === 'ArrowRight') nextIndex = currentIndex === lastIndex ? 0 : currentIndex + 1;
+    else if (event.key === 'ArrowLeft') nextIndex = currentIndex === 0 ? lastIndex : currentIndex - 1;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = lastIndex;
+    else return;
+    event.preventDefault();
+    const nextTab = cultureEducationSubTabs[nextIndex];
+    setCultureEducationSubTab(nextTab.key);
+    window.requestAnimationFrame(() => document.getElementById(`culture-education-tab-${nextTab.key}`)?.focus());
+  };
+
   return (
     <div className="min-h-screen bg-[#F5F8FC] text-slate-900 font-sans">
       {/* 상단 고정 헤더 */}
       <header className="sticky top-0 bg-white/95 backdrop-blur border-b border-[#A7A9B4]/30 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-16 py-2 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center min-w-0">
-            <img
-              src="/brand/libscope-li-header-crop.png"
-              alt="LIBscope Library Insight Dashboard"
-              className="h-9 sm:h-11 w-auto max-w-[170px] sm:max-w-[320px] object-contain"
-            />
+          <div className="inline-flex min-w-0 items-baseline leading-none tracking-[-0.04em]" aria-label="LIBscope">
+            <span className="text-2xl font-black text-[#075BD8] sm:text-3xl">LIB</span>
+            <span className="text-xl font-extrabold text-[#3F8FEA] sm:text-2xl">scope</span>
           </div>
 
           <div className="flex space-x-1 bg-[#F5F8FC] p-1 rounded-xl border border-[#A7A9B4]/25">
@@ -822,7 +1328,7 @@ function App() {
                       />
                       <button
                         type="submit"
-                        disabled={addressSearching || loading || !mapLoaded}
+                        disabled={addressSearching || loading}
                         className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-sm font-extrabold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Search size={15} />
@@ -850,17 +1356,6 @@ function App() {
                 )}
               </div>
             )}
-            {activeTab === 'district' && (
-              <button
-                type="button"
-                onClick={() => setReportPreviewOpen(prev => !prev)}
-                disabled={llmLoading || !insightCacheHit || !llmHarness?.report}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-extrabold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FileText size={14} />
-                {reportPreviewOpen ? '자치구 보고서 미리보기 닫기' : '자치구 보고서 미리보기'}
-              </button>
-            )}
           </div>
         </section>
 
@@ -882,181 +1377,49 @@ function App() {
         {!loading && activeTab === 'district' && districtData && (
           <div className="flex flex-col gap-6">
 
-            {/* LLM 인사이트 프리뷰 영역 */}
-            <section className="order-[10] relative overflow-hidden rounded-2xl border border-blue-200/70 bg-gradient-to-br from-[#001f75] via-[#0031A7] to-[#167BD9] p-4 text-white shadow-[0_22px_55px_rgba(0,49,167,0.24)] sm:p-6">
-              <div
-                className="pointer-events-none absolute inset-0 opacity-20"
-                style={{ backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.18) 0 1px, transparent 1px 12px)' }}
-              />
-              <div className="relative">
-              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                <div className="flex items-start gap-3 sm:gap-4">
-                  <div className="rounded-xl border border-white/25 bg-white/12 p-2.5 text-white shadow-sm sm:p-3">
-                    <Bot size={22} />
-                  </div>
-                  <div>
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/12 px-2.5 py-1 text-[10px] font-black tracking-[0.14em] text-cyan-100">
-                      <Sparkles size={12} />
-                      AI 작성 영역
-                    </span>
-                    <h3 className="mt-2 font-extrabold text-lg sm:text-xl text-white">{selectedGu} 종합 인사이트</h3>
-                    <p className="text-xs font-semibold leading-relaxed text-blue-100/90 mt-1">
-                      인구, 복지, 문화, 도서관 입지 지표를 함께 묶어 지역 판단의 출발점을 정리합니다.
-                    </p>
-                    <p className="text-[10px] text-cyan-100/90 font-bold leading-relaxed mt-2">{insightDisplayMetaText}</p>
-                  </div>
-                </div>
-                <div className="flex flex-col items-start lg:items-end gap-2">
-                  <div className="hidden sm:flex flex-wrap justify-start lg:justify-end gap-2">
-                    {insightModelBadges.map(badge => (
-                      <span key={`insight-model-${badge.label}`} className="rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[10px] font-extrabold text-blue-50 shadow-sm">
-                        {badge.label} {badge.value}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {insightCacheHit ? (
-                      <div className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-extrabold shadow-sm ${
-                        insightSnapshotStale
-                          ? 'border-amber-200 bg-amber-50 text-amber-800'
-                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      }`}>
-                        <Calendar size={14} />
-                        {insightSnapshotStale ? '이전 생성본' : '인사이트 생성일'} {insightGeneratedAtLabel}
-                      </div>
-                    ) : insightCanGenerate ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLlmProviderMode('direct-openai');
-                          setLlmRefreshNonce(prev => prev + 1);
-                        }}
-                        disabled={llmLoading}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/50 bg-white px-3 py-2 text-xs font-extrabold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Sparkles size={14} />
-                        내 키로 AI 생성
-                      </button>
-                    ) : (
-                      <div className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs font-extrabold text-blue-50">
-                        <Sparkles size={14} />
-                        캐시 연결 확인 중
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {insightCards.length > 0 ? (
-                <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-2.5 sm:gap-3">
-                  {insightCards.map(item => {
-                    const tone = insightCardToneByLabel[item.label] || insightCardToneByLabel['핵심 판단'];
-                    return (
-                    <div key={item.label} className="relative min-h-40 overflow-hidden rounded-xl border border-white/80 bg-white/95 p-4 text-slate-900 shadow-lg sm:p-5">
-                      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${tone.top}`} />
-                      <div className="pointer-events-none absolute right-3 top-3 select-none text-[8px] font-black tracking-[0.18em] text-blue-100">
-                        AI
-                      </div>
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-extrabold ${tone.badge}`}>{item.label}</span>
-                      <ul className="mt-3 space-y-2">
-                        {getInsightBullets(item).map((bullet, index) => (
-                          <li key={`${item.label}-${index}`} className="flex gap-2 text-xs sm:text-[13px] font-extrabold leading-relaxed text-slate-700">
-                            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
-                            <span>{bullet}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    );
-                  })}
-                </div>
-              ) : !llmLoading && (
-                <div className="mt-5 rounded-xl border border-dashed border-white/35 bg-white/12 px-4 py-4 text-xs font-bold leading-relaxed text-blue-50">
-                  <span className="mb-2 inline-flex rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-black tracking-[0.12em] text-cyan-100">
-                    AI 인사이트 대기
-                  </span>
-                  <p>
-                    {insightCanGenerate
-                      ? '현재 지표 스냅샷에 저장된 종합 인사이트가 없습니다. 내 키로 AI 생성을 실행하면 전문 해석 결과가 DB에 저장되고 이후에는 생성일만 표시됩니다.'
-                      : '현재 캐시 저장소 상태를 확인 중입니다. 저장 가능한 상태가 확인되면 AI 생성 버튼이 활성화됩니다.'}
-                  </p>
-                </div>
-              )}
-
-              {llmLoading && (
-                <div className="mt-4 rounded-xl border border-white/20 bg-white/12 px-4 py-3 text-xs font-bold text-blue-50">
-                  {llmProviderMode === 'cache' ? 'DB 캐시 확인 중...' : llmProviderMode === 'mock' ? 'mock LLM 하네스 생성 중...' : '직접 키로 AI 해석 생성 중...'}
-                </div>
-              )}
-
-              {insightCacheUnavailable && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
-                  DB 캐시 테이블이 아직 연결되지 않아 생성 결과가 재사용되지 않을 수 있습니다. Supabase LLM 캐시 스키마 적용 후 자동 저장됩니다.
-                </div>
-              )}
-
-              {(insightSnapshotStale || sectionSnapshotStale) && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-800">
-                  현재 지표 스냅샷과 정확히 일치하는 AI 생성본이 없어 가장 최근 생성본을 표시 중입니다. 화면의 지표 값과 AI 문장의 일부 수치가 다를 수 있습니다.
-                </div>
-              )}
-
-              {llmHarness?.fallbackReason && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
-                  직접 AI 호출 실패로 mock 결과를 표시합니다. {llmHarness.aiMeta?.error || ''}
-                </div>
-              )}
-
-              {llmError && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
-                  {llmError}
-                </div>
-              )}
-
-              {reportPreviewOpen && insightCacheHit && llmHarness?.report && (
-                <div className="mt-6 rounded-2xl border border-white/70 bg-white/95 p-5 text-slate-900 shadow-xl">
-                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4">
-                    <div>
-                      <p className="inline-flex items-center gap-1.5 rounded-full border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-[10px] font-black tracking-[0.12em] text-blue-700">
-                        <Sparkles size={11} />
-                        AI 보고서 초안
-                      </p>
-                      <h4 className="text-lg font-extrabold text-slate-900 mt-1">{llmHarness.report.title}</h4>
-                      <p className="text-xs font-bold text-slate-500 mt-1">{llmHarness.report.subtitle}</p>
-                    </div>
+            <nav
+              className="sticky top-[72px] z-40 -mx-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-sm backdrop-blur sm:top-[65px]"
+              aria-label="자치구 현황 세부 영역"
+            >
+              <div className="flex min-w-max gap-1 sm:grid sm:min-w-0 sm:grid-cols-4" role="tablist" aria-label="자치구 현황 하위 탭">
+                {districtSectionTabs.map((tab, index) => {
+                  const isActive = districtSectionTab === tab.key;
+                  return (
                     <button
+                      key={tab.key}
+                      id={`district-tab-${tab.key}`}
                       type="button"
-                      onClick={downloadDistrictReportMarkdown}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-extrabold text-blue-700 shadow-sm hover:bg-blue-50"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-controls={`district-panel-${tab.key}`}
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => setDistrictSectionTab(tab.key)}
+                      onKeyDown={event => handleDistrictSectionTabKeyDown(event, index)}
+                      className={`min-w-24 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                        isActive
+                          ? 'bg-[#0031A7] text-white shadow-sm'
+                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                      }`}
                     >
-                      <Download size={14} />
-                      Markdown 다운로드
+                      {tab.label}
                     </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {llmHarness.report.sections.map(section => (
-                      <div key={section.heading} className="rounded-xl border border-cyan-100 bg-gradient-to-br from-white to-cyan-50/45 p-4 shadow-sm">
-                        <h5 className="text-sm font-extrabold text-slate-800">{section.heading}</h5>
-                        <p className="text-xs font-bold text-slate-600 leading-relaxed mt-2">{section.body}</p>
-                        <ul className="mt-3 list-disc space-y-2 pl-4">
-                          {section.bullets.slice(0, 3).map((bullet, index) => (
-                            <li key={`${section.heading}-${index}`} className="text-[11px] font-semibold text-slate-500 leading-relaxed">
-                              {bullet}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
+                  );
+                })}
               </div>
-            </section>
-            
-            {/* 자치구 개요 카드 */}
-            <div className="order-[20] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            </nav>
+
+            <div
+              id={`district-panel-${districtSectionTab}`}
+              role="tabpanel"
+              aria-labelledby={`district-tab-${districtSectionTab}`}
+              className="flex flex-col gap-6"
+            >
+
+            {/* LLM 인사이트 프리뷰 영역 */}
+            {districtSectionTab === 'overview' && (
+              <>
+            {/* 자치구 핵심 KPI */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
               <div className="order-1 bg-blue-50/40 rounded-xl shadow-sm border border-blue-200 p-4 sm:p-5 flex flex-col justify-between min-h-32 sm:h-36">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1125,12 +1488,264 @@ function App() {
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-2">
-                  출처: 서울 열린데이터광장(문화행사 정보 API)
+                  출처: 서울 열린데이터광장 · 한국문화정보원
                 </div>
               </div>
             </div>
 
+            <section className="relative overflow-hidden rounded-2xl border border-blue-200/70 bg-gradient-to-br from-[#001f75] via-[#0031A7] to-[#167BD9] p-4 text-white shadow-[0_22px_55px_rgba(0,49,167,0.24)] sm:p-6">
+              <div
+                className="pointer-events-none absolute inset-0 opacity-20"
+                style={{ backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.18) 0 1px, transparent 1px 12px)' }}
+              />
+              <div className="relative">
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="rounded-xl border border-white/25 bg-white/12 p-2.5 text-white shadow-sm sm:p-3">
+                    <Bot size={22} />
+                  </div>
+                  <div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/12 px-2.5 py-1 text-[10px] font-black tracking-[0.14em] text-cyan-100">
+                      <Sparkles size={12} />
+                      AI 작성 영역
+                    </span>
+                    <h3 className="mt-2 font-extrabold text-lg sm:text-xl text-white">{selectedGu} 종합 인사이트</h3>
+                    <p className="text-xs font-semibold leading-relaxed text-blue-100/90 mt-1">
+                      인구, 복지, 문화, 도서관 입지 지표를 함께 묶어 지역 판단의 출발점을 정리합니다.
+                    </p>
+                    <p className="text-[10px] text-cyan-100/90 font-bold leading-relaxed mt-2">{insightDisplayMetaText}</p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-start lg:items-end gap-2">
+                  <div className="hidden sm:flex flex-wrap justify-start lg:justify-end gap-2">
+                    {insightModelBadges.map(badge => (
+                      <span key={`insight-model-${badge.label}`} className="rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[10px] font-extrabold text-blue-50 shadow-sm">
+                        {badge.label} {badge.value}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {insightCacheHit ? (
+                      <div className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-extrabold shadow-sm ${
+                        insightSnapshotStale
+                          ? 'border-amber-200 bg-amber-50 text-amber-800'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      }`}>
+                        <Calendar size={14} />
+                        {insightSnapshotStale ? '이전 생성본' : '인사이트 생성일'} {insightGeneratedAtLabel}
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs font-extrabold text-blue-50">
+                        <Sparkles size={14} />
+                        저장된 인사이트 확인 중
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {insightCards.length > 0 ? (
+                <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-2.5 sm:gap-3">
+                  {insightCards.map(item => {
+                    const tone = insightCardToneByLabel[item.label] || insightCardToneByLabel['핵심 판단'];
+                    return (
+                    <div key={item.label} className="relative min-h-40 overflow-hidden rounded-xl border border-white/80 bg-white/95 p-4 text-slate-900 shadow-lg sm:p-5">
+                      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${tone.top}`} />
+                      <div className="pointer-events-none absolute right-3 top-3 select-none text-[8px] font-black tracking-[0.18em] text-blue-100">
+                        AI
+                      </div>
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-extrabold ${tone.badge}`}>{item.label}</span>
+                      <ul className="mt-3 space-y-2">
+                        {getInsightBullets(item).map((bullet, index) => (
+                          <li key={`${item.label}-${index}`} className="flex gap-2 text-xs sm:text-[13px] font-extrabold leading-relaxed text-slate-700">
+                            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
+                            <span>{bullet}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    );
+                  })}
+                </div>
+              ) : !llmLoading && (
+                <div className="mt-5 rounded-xl border border-dashed border-white/35 bg-white/12 px-4 py-4 text-xs font-bold leading-relaxed text-blue-50">
+                  <span className="mb-2 inline-flex rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-black tracking-[0.12em] text-cyan-100">
+                    AI 인사이트 대기
+                  </span>
+                  <p>
+                    현재 지표 스냅샷에 저장된 종합 인사이트가 없습니다. 인사이트는 운영 갱신 후 이 영역에 표시됩니다.
+                  </p>
+                </div>
+              )}
+
+              {llmLoading && (
+                <div className="mt-4 rounded-xl border border-white/20 bg-white/12 px-4 py-3 text-xs font-bold text-blue-50">
+                  DB 캐시 확인 중...
+                </div>
+              )}
+
+              {insightCacheUnavailable && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                  DB 캐시 테이블이 아직 연결되지 않아 생성 결과가 재사용되지 않을 수 있습니다. Supabase LLM 캐시 스키마 적용 후 자동 저장됩니다.
+                </div>
+              )}
+
+              {(insightSnapshotStale || sectionSnapshotStale) && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-800">
+                  현재 지표 스냅샷과 정확히 일치하는 AI 생성본이 없어 가장 최근 생성본을 표시 중입니다. 화면의 지표 값과 AI 문장의 일부 수치가 다를 수 있습니다.
+                </div>
+              )}
+
+              {llmHarness?.fallbackReason && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                  직접 AI 호출 실패로 mock 결과를 표시합니다. {llmHarness.aiMeta?.error || ''}
+                </div>
+              )}
+
+              {llmError && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                  {llmError}
+                </div>
+              )}
+
+              </div>
+            </section>
+
+            {insightCacheHit && llmHarness?.report && (
+              <article className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-[#fcfdff] text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.09)]" aria-labelledby="district-report-title">
+                <header className="border-b border-blue-100 bg-white px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="max-w-3xl">
+                      <p className="inline-flex items-center gap-2 text-[10px] font-black tracking-[0.16em] text-blue-700">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50">
+                          <FileText size={15} strokeWidth={1.8} />
+                        </span>
+                        AI 웹 리포트
+                      </p>
+                      <h4 id="district-report-title" className="mt-4 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{llmHarness.report.title}</h4>
+                      <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500">{llmHarness.report.subtitle}</p>
+                      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-4 text-[11px] font-bold text-slate-500">
+                        <span className="inline-flex items-center gap-1.5"><Sparkles size={13} className="text-blue-600" />AI 생성 인사이트</span>
+                        <span className="inline-flex items-center gap-1.5"><Calendar size={13} className="text-emerald-600" />{insightGeneratedAtLabel}</span>
+                        <span>기준 지역 · 서울특별시 {selectedGu}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={downloadDistrictReportMarkdown}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-3.5 py-2.5 text-xs font-extrabold text-blue-700 transition-colors hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                    >
+                      <Download size={14} strokeWidth={1.8} />
+                      Markdown 다운로드
+                    </button>
+                  </div>
+                </header>
+
+                <nav className="overflow-x-auto border-b border-slate-200 bg-slate-50/80 px-5 sm:px-8 lg:px-10" aria-label="보고서 목차">
+                  <ol className="flex min-w-max items-stretch gap-6">
+                    {llmHarness.report.sections.map((section, index) => {
+                      const theme = reportSectionThemes[index] || reportSectionThemes[0];
+                      const SectionIcon = theme.icon;
+                      return (
+                        <li key={`toc-${section.heading}`}>
+                          <a href={`#district-report-section-${index + 1}`} className={`inline-flex h-14 items-center gap-2 border-b-2 border-transparent text-xs font-extrabold transition-colors hover:border-current focus-visible:border-current focus-visible:outline-none ${theme.accent}`}>
+                            <SectionIcon size={15} strokeWidth={1.8} />
+                            <span>{String(index + 1).padStart(2, '0')}</span>
+                            <span>{section.heading.replace(/^\d+\.\s*/, '')}</span>
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </nav>
+
+                <div className="px-5 sm:px-8 lg:px-10">
+                  {llmHarness.report.sections.map((section, index) => {
+                    const theme = reportSectionThemes[index] || reportSectionThemes[0];
+                    const SectionIcon = theme.icon;
+                    return (
+                      <section
+                        key={section.heading}
+                        id={`district-report-section-${index + 1}`}
+                        className={`scroll-mt-40 border-b py-8 last:border-b-0 sm:py-10 ${theme.rule}`}
+                      >
+                        <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+                          <div>
+                            <div className="flex items-center gap-3 lg:items-start">
+                              <span className={`text-3xl font-light leading-none ${theme.accent}`}>{String(index + 1).padStart(2, '0')}</span>
+                              <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${theme.iconBox}`}>
+                                <SectionIcon size={19} strokeWidth={1.7} />
+                              </span>
+                            </div>
+                            <h5 className={`mt-4 text-base font-black leading-snug ${theme.accent}`}>{section.heading.replace(/^\d+\.\s*/, '')}</h5>
+                          </div>
+
+                          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:gap-10">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-[10px] font-black tracking-[0.14em] text-slate-400">핵심 해석</p>
+                                {llmHarness.aiMeta?.reportNarrativeModel && (
+                                  <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] font-extrabold text-violet-700">
+                                    {llmHarness.aiMeta.reportNarrativeModel} 생성
+                                  </span>
+                                )}
+                              </div>
+                              <ul className="mt-3 max-w-[65ch] space-y-2.5 text-sm font-bold leading-7 text-slate-700">
+                                {splitReportSentences(section.body).map((sentence, sentenceIndex) => (
+                                  <li key={`${section.heading}-sentence-${sentenceIndex}`} className="flex items-start gap-3">
+                                    <span className={`mt-[0.68rem] h-1.5 w-1.5 shrink-0 rounded-full ${theme.bullet}`} aria-hidden="true" />
+                                    <span className="min-w-0 flex-1">{sentence}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="border-t border-slate-200 pt-5 xl:border-l xl:border-t-0 xl:pl-8 xl:pt-0">
+                              <p className={`text-[10px] font-black tracking-[0.14em] ${theme.accent}`}>근거와 시사점</p>
+                              <ul className="mt-3 space-y-3">
+                                {section.bullets.slice(0, 3).map((bullet, bulletIndex) => (
+                                  <li key={`${section.heading}-${bulletIndex}`} className="flex gap-3 text-xs font-semibold leading-6 text-slate-600">
+                                    <span className={`mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full ${theme.bullet}`} />
+                                    <span className="min-w-0 flex-1">
+                                      {splitReportBulletLines(bullet).map((line, lineIndex) => (
+                                        <span
+                                          key={`${section.heading}-${bulletIndex}-line-${lineIndex}`}
+                                          className={`block ${lineIndex > 0 ? 'mt-1.5 border-l border-slate-200 pl-3 text-slate-500' : ''}`}
+                                        >
+                                          {line}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              </article>
+            )}
+
+              </>
+            )}
+
             {/* 인구 구조 분석 (ECharts) */}
+            {districtSectionTab === 'population' && (
+              <>
+            <MetricInterpretationPanel
+              packet={generatedInterpretations?.population}
+              tone="blue"
+              loading={llmLoading}
+              error={llmError}
+              className="order-[20]"
+              variant="strip"
+              pendingTitle="인구구조 해석"
+              staleSnapshot={isSectionSnapshotStale('population')}
+              summaryText={getReportCoreInterpretation(2)}
+            />
+
             <div className="order-[30] grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 lg:col-span-2 flex flex-col justify-between">
                 <div>
@@ -1138,11 +1753,11 @@ function App() {
                     <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Users size={20} className="text-blue-600" />연령대별 인구 분포</h4>
                     <PopulationModeToggle populationMode={populationMode} onChange={setPopulationMode} />
                   </div>
-                  <p className="text-xs text-slate-400 mb-4">0-9세는 하늘색, 10-64세는 노랑, 65세 이상은 빨강으로 구분합니다.</p>
+                  <p className="text-xs text-slate-400 mb-4">0-9세는 하늘색, 10-19세는 초록색, 20-64세는 노랑, 65세 이상은 빨강으로 구분합니다.</p>
                 </div>
                 <div className="h-80">
                   <ResponsiveEChart
-                    option={getAgeChartOption(activeDistrictPopulation?.ageDistribution)} 
+                    option={getAgeChartOption(activeDistrictPopulation?.ageDistribution)}
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
@@ -1158,7 +1773,7 @@ function App() {
                 </div>
                 <div className="h-80">
                   <ResponsiveEChart
-                    option={getGenderChartOption(activeDistrictPopulation?.genderRatio)} 
+                    option={getGenderChartOption(activeDistrictPopulation?.genderRatio)}
                     style={{ height: '100%', width: '100%' }}
                   />
                 </div>
@@ -1169,36 +1784,198 @@ function App() {
               </div>
             </div>
 
-            <MetricInterpretationPanel
-              packet={generatedInterpretations?.population}
-              tone="blue"
-              loading={llmLoading}
-              error={llmError}
-              className="order-[40]"
-              variant="strip"
-              pendingTitle="인구구조 해석"
-              staleSnapshot={isSectionSnapshotStale('population')}
-              onRegenerate={() => regenerateInterpretationSection('population')}
-              regenerating={regeneratingSection === 'population'}
-            />
+            <section className="order-[35] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-labelledby="dong-population-title">
+              <div className="border-b border-slate-100 p-4 sm:p-6">
+                <div>
+                  <h4 id="dong-population-title" className="flex items-center gap-2 text-lg font-extrabold text-slate-800">
+                    <MapPinned size={20} className="text-blue-600" />
+                    행정동별 인구 구성
+                  </h4>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    유아·청소년 0–19세 · 청년·중장년 20–64세 · 고령인구 65세 이상
+                  </p>
+                </div>
+              </div>
+
+              <DongPopulationMap
+                gu={selectedGu}
+                rows={sortedDongPopulationRows}
+                metric={dongPopulationSort}
+                onMetricChange={setDongPopulationSort}
+                selectedDong={selectedDongPopulation}
+                onSelectedDongChange={setSelectedDongPopulation}
+                populationSource={`출처: ${getPopulationSourceLabel(activeDistrictPopulation)}`}
+              />
+
+              {sortedDongPopulationRows.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] border-collapse text-left">
+                    <thead className="bg-slate-50 text-xs font-extrabold text-slate-600">
+                      <tr>
+                        <th scope="col" className="w-16 px-4 py-3 text-center sm:px-6">순위</th>
+                        <th scope="col" className="px-4 py-3 sm:px-6">행정동</th>
+                        <th scope="col" className={`px-4 py-3 text-right ${dongPopulationSort === 'total' ? 'bg-blue-50 text-blue-700' : ''}`}>전체 인구</th>
+                        <th scope="col" className={`px-4 py-3 text-right ${['childrenYouth', 'childrenYouthRatio'].includes(dongPopulationSort) ? 'bg-blue-50 text-blue-700' : ''}`}>유아·청소년</th>
+                        <th scope="col" className={`px-4 py-3 text-right ${['youngMiddle', 'youngMiddleRatio'].includes(dongPopulationSort) ? 'bg-blue-50 text-blue-700' : ''}`}>청년·중장년</th>
+                        <th scope="col" className={`px-4 py-3 text-right ${['senior', 'seniorRatio'].includes(dongPopulationSort) ? 'bg-blue-50 text-blue-700' : ''}`}>고령인구</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-sm">
+                      {sortedDongPopulationRows.map((row, index) => (
+                        <tr
+                          key={row.dong}
+                          data-selected={row.dong === selectedDongPopulation ? 'true' : 'false'}
+                          className={`transition-colors ${row.dong === selectedDongPopulation ? selectedDongPopulationRowClass : 'hover:bg-slate-50/80'}`}
+                        >
+                          <td className="px-4 py-3 text-center font-extrabold text-slate-400 sm:px-6">{index + 1}</td>
+                          <th scope="row" className="px-4 py-3 font-extrabold text-slate-800 sm:px-6">{row.dong}</th>
+                          <td className={`px-4 py-3 text-right font-bold tabular-nums ${dongPopulationSort === 'total' ? 'bg-blue-50/60 text-blue-800' : 'text-slate-700'}`}>{row.total.toLocaleString()}명</td>
+                          <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums ${['childrenYouth', 'childrenYouthRatio'].includes(dongPopulationSort) ? 'bg-blue-50/60 text-blue-800' : 'text-slate-600'}`}>
+                            {row.childrenYouth.toLocaleString()}명 <span className="text-xs opacity-70">· {row.childrenYouthRatio.toFixed(1)}%</span>
+                          </td>
+                          <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums ${['youngMiddle', 'youngMiddleRatio'].includes(dongPopulationSort) ? 'bg-blue-50/60 text-blue-800' : 'text-slate-600'}`}>
+                            {row.youngMiddle.toLocaleString()}명 <span className="text-xs opacity-70">· {row.youngMiddleRatio.toFixed(1)}%</span>
+                          </td>
+                          <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums ${['senior', 'seniorRatio'].includes(dongPopulationSort) ? 'bg-blue-50/60 text-blue-800' : 'text-slate-600'}`}>
+                            {row.senior.toLocaleString()}명 <span className="text-xs opacity-70">· {row.seniorRatio.toFixed(1)}%</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="px-6 py-12 text-center">
+                  <p className="text-sm font-extrabold text-slate-600">행정동별 세부 인구 데이터 준비 중</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">현재 선택한 인구 기준에서 행정동 단위 자료를 확인할 수 없습니다.</p>
+                </div>
+              )}
+
+              <div className="border-t border-slate-100 px-4 py-3 sm:px-6">
+                <PopulationSource population={activeDistrictPopulation} className="text-[10px] font-medium text-slate-500" />
+              </div>
+            </section>
+
+              </>
+            )}
 
             {/* 문화 역량·향유 지표 섹션 */}
+            {districtSectionTab === 'cultureEducation' && (
+              <>
+            <nav className="order-[38] overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm" aria-label="문화·교육 주제 선택">
+              <div className="grid min-w-[480px] grid-cols-2 gap-2" role="tablist" aria-label="문화·교육 하위 탭">
+                {cultureEducationSubTabs.map((tab, index) => {
+                  const isActive = cultureEducationSubTab === tab.key;
+                  const TabIcon = tab.icon;
+                  return (
+                    <button
+                      key={tab.key}
+                      id={`culture-education-tab-${tab.key}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-controls={`culture-education-panel-${tab.key}`}
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => setCultureEducationSubTab(tab.key)}
+                      onKeyDown={event => handleCultureEducationSubTabKeyDown(event, index)}
+                      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                        isActive ? tab.active : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isActive ? 'bg-white/20 text-white' : `bg-slate-50 ${tab.iconColor}`}`} aria-hidden="true">
+                        <TabIcon size={17} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className={`block text-[9px] font-black tracking-widest ${isActive ? 'text-white/75' : 'text-slate-400'}`}>{tab.number}</span>
+                        <span className="block truncate text-xs font-extrabold sm:text-sm">{tab.label}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+
+            {cultureEducationSubTab === 'culture' && (
+            <section id="culture-education-panel-culture" role="tabpanel" aria-labelledby="culture-education-tab-culture" className="order-[40] space-y-4 overflow-hidden rounded-[1.75rem] border border-emerald-200/80 bg-emerald-50/45 p-3 shadow-sm sm:p-4">
+              <header className="-mx-3 -mt-3 border-b border-emerald-700/25 bg-emerald-600 p-4 text-white shadow-sm sm:-mx-4 sm:-mt-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 min-w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/15 px-2 text-xs font-black text-white">01</span>
+                <div>
+                  <h3 id="culture-foundation-group-title" className="flex items-center gap-2 text-base font-black text-white">
+                    <Theater size={18} className="text-white" /> 문화 기반·향유
+                  </h3>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-white/80">문화 공급 기반과 시민 향유 기준을 함께 확인하는 영역</p>
+                </div>
+              </div>
+              </header>
+
+              <MetricInterpretationPanel
+                packet={generatedInterpretations?.culture}
+                tone="emerald"
+                loading={llmLoading}
+                error={llmError}
+                variant="strip"
+                pendingTitle="자치구 문화 통합 해석"
+                staleSnapshot={isSectionSnapshotStale('culture')}
+                summaryText={getReportCoreInterpretation(3)}
+              />
+
             {selectedCultureMetrics && (
-              <div className="order-[60] bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-6">
-                  <div>
-                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Theater size={20} className="text-rose-600" />문화 역량·향유 지표</h4>
-                    <p className="text-xs text-slate-400 mt-1">
-                      자치구 문화 기반과 서울시 문화향유 참고값을 함께 보며 문화 접근성의 맥락을 확인합니다.
-                    </p>
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+                <div className="relative -mx-4 -mt-4 mb-6 overflow-hidden rounded-t-2xl border-b border-emerald-200 bg-gradient-to-r from-emerald-100 via-teal-50 to-white px-4 py-5 sm:-mx-6 sm:-mt-6 sm:px-6 sm:py-6 lg:flex lg:items-center lg:justify-between lg:gap-4">
+                  <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-emerald-200/35" aria-hidden="true" />
+                  <div className="relative flex items-start gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm" aria-hidden="true"><Theater size={21} /></span>
+                    <div>
+                      <h4 className="text-lg font-extrabold text-emerald-950">문화 역량·향유 지표</h4>
+                      <p className="mt-1 text-xs font-semibold text-emerald-900/65">
+                        자치구 문화 기반과 서울시 문화향유 참고값을 함께 보며 문화 접근성의 맥락을 확인합니다.
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-[10px] text-slate-400 font-medium lg:text-right">
+                  <div className="relative mt-3 inline-flex rounded-full border border-emerald-200 bg-white/75 px-3 py-2 text-[10px] font-semibold text-emerald-700 lg:mt-0 lg:max-w-sm lg:text-right">
                     출처: 2023 서울문화지표 조사연구 / 기준연도 {selectedCultureMetrics.year}
                   </div>
                 </div>
 
+                <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <h5 className="mb-1 text-sm font-extrabold text-slate-800">문화자원 구성</h5>
+                    <p className="text-xs leading-relaxed text-slate-500">
+                      시설 유형이 어느 자원에 상대적으로 집중되어 있는지 확인하는 참고 차트입니다.
+                    </p>
+                    <div className="mt-2 h-72">
+                      <ResponsiveEChart option={getCultureCompositionOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <h5 className="mb-1 text-sm font-extrabold text-slate-800">인구 대비 접근성</h5>
+                    <p className="text-xs leading-relaxed text-slate-500">
+                      인구 10만 명당 기준으로 서로 다른 문화자원을 나란히 비교합니다.
+                    </p>
+                    <div className="mt-2 h-72">
+                      <ResponsiveEChart option={getCultureAccessBarOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
+                    </div>
+                  </div>
+                </div>
+
+                <details className="group rounded-2xl border border-emerald-200 bg-emerald-50/35">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-4 py-4 text-left transition-colors hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 sm:px-5">
+                    <span>
+                      <span className="block text-sm font-extrabold text-emerald-950">세부 수치·AI 해석 근거</span>
+                      <span className="mt-1 block text-xs font-semibold text-emerald-900/60">화면에서는 접어두지만 AI 해석에는 전체 지표가 그대로 전달됩니다.</span>
+                    </span>
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3 py-2 text-[10px] font-extrabold text-emerald-700">
+                      <span className="group-open:hidden">세부 지표 열기</span>
+                      <span className="hidden group-open:inline">세부 지표 닫기</span>
+                      <ChevronRight size={14} className="transition-transform group-open:rotate-90" aria-hidden="true" />
+                    </span>
+                  </summary>
+
+                  <div className="border-t border-emerald-100 p-4 sm:p-5">
                 <div className="mb-5 flex flex-wrap gap-2">
-                  <span className="rounded-full border border-rose-100 bg-rose-50 px-3 py-1.5 text-[11px] font-extrabold text-rose-700">
+                  <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700">
                     자치구 직접 지표: 시설 수·접근성·정책 기반
                   </span>
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-extrabold text-slate-600">
@@ -1209,18 +1986,20 @@ function App() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-                  <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {cultureMetricGroups.map(group => (
+                <div className="mb-5 grid grid-cols-1 gap-5">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {cultureMetricGroups.map(group => {
+                      const CultureMetricIcon = cultureMetricIcons[group.key];
+                      return (
                       <div key={group.key} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 min-h-44 flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${cultureColorClasses[group.color]}`} aria-hidden="true">
+                            <CultureMetricIcon size={18} strokeWidth={1.8} />
+                          </span>
+                          <div className="min-w-0">
                             <h5 className="font-extrabold text-sm text-slate-800">{group.title}</h5>
-                            <span className={`shrink-0 text-[10px] font-extrabold px-2 py-1 rounded-full border ${cultureColorClasses[group.color]}`}>
-                              지표
-                            </span>
+                            <p className="text-xs text-slate-500 leading-relaxed mt-1.5">{group.description}</p>
                           </div>
-                          <p className="text-xs text-slate-500 leading-relaxed mt-2">{group.description}</p>
                         </div>
                         <div className="grid grid-cols-2 gap-3 mt-4">
                           {group.metrics.map(metric => (
@@ -1233,30 +2012,10 @@ function App() {
                           ))}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
-                  <div className="space-y-6">
-                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                      <h5 className="font-extrabold text-sm text-slate-800 mb-1">문화자원 구성</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        시설 유형이 어느 자원에 상대적으로 집중되어 있는지 확인하는 참고 차트입니다.
-                      </p>
-                      <div className="h-72 mt-2">
-                        <ResponsiveEChart option={getCultureCompositionOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                      <h5 className="font-extrabold text-sm text-slate-800 mb-1">인구 대비 접근성</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        인구 10만 명당 기준으로 서로 다른 문화자원을 나란히 비교합니다.
-                      </p>
-                      <div className="h-64 mt-2">
-                        <ResponsiveEChart option={getCultureAccessBarOption(selectedCultureMetrics)} style={{ height: '100%', width: '100%' }} />
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
@@ -1340,61 +2099,442 @@ function App() {
                     </div>
                   </div>
                 </div>
+                  </div>
+                </details>
 
-                <div className="mt-5">
-                  <MetricInterpretationPanel
-                    packet={generatedInterpretations?.culture}
-                    tone="rose"
-                    loading={llmLoading}
-                    error={llmError}
-                    variant="strip"
-                    pendingTitle="문화 역량·향유 해석"
-                    staleSnapshot={isSectionSnapshotStale('culture')}
-                    onRegenerate={() => regenerateInterpretationSection('culture')}
-                    regenerating={regeneratingSection === 'culture'}
-                  />
-                </div>
               </div>
             )}
+            </section>
+            )}
 
-            {/* 교육 인프라 분석 */}
-            <div className="order-[70] grid grid-cols-1 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col justify-between">
+            {cultureEducationSubTab === 'culture' && (
+            <section aria-labelledby="culture-resources-group-title" className="order-[55] flex flex-col gap-4 overflow-hidden rounded-[1.75rem] border border-emerald-200/80 bg-emerald-50/45 p-3 shadow-sm sm:p-4">
+              <header className="-mx-3 -mt-3 border-b border-emerald-700/25 bg-emerald-600 p-4 text-white shadow-sm sm:-mx-4 sm:-mt-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 min-w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/15 px-2 text-xs font-black text-white">02</span>
                 <div>
-                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-5">
-                    <div>
-                      <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><School size={20} className="text-indigo-600" />교육기관 인프라</h4>
-                      <p className="text-xs text-slate-400 mt-1">학교급을 선택하면 해당 자치구 내 학교명과 주소를 목록으로 확인합니다.</p>
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-medium lg:text-right">
-                      출처: 서울 열린데이터광장(나이스 학교 정보 및 대학 전문대학 DB API)
-                    </span>
-                  </div>
+                  <h3 id="culture-resources-group-title" className="flex items-center gap-2 text-base font-black text-white">
+                    <MapPinned size={18} className="text-white" /> 문화 참여·지역 자원
+                  </h3>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-white/80">참여 가능한 문화행사와 생활권 문화시설을 탐색하는 영역</p>
+                </div>
+              </div>
+              </header>
 
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    {educationCategories.map(category => {
-                      const isActive = activeEducationCategory.key === category.key;
+            <section className="order-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="culture-events-title">
+              <div className="relative -mx-4 -mt-4 mb-5 overflow-hidden rounded-t-2xl border-b border-emerald-200 bg-gradient-to-r from-emerald-100 via-teal-50 to-white px-4 py-5 sm:-mx-6 sm:-mt-6 sm:px-6 sm:py-6 lg:flex lg:items-center lg:justify-between lg:gap-4">
+                <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-emerald-200/35" aria-hidden="true" />
+                <div className="relative flex items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm" aria-hidden="true"><Calendar size={21} /></span>
+                  <div>
+                    <h4 id="culture-events-title" className="text-lg font-extrabold text-emerald-950">진행 중·예정 문화행사</h4>
+                    <p className="mt-1 text-xs font-semibold text-emerald-900/65">종료된 행사를 제외하고 {selectedGu}에서 참여 가능한 행사를 확인합니다.</p>
+                  </div>
+                </div>
+                <span className="relative mt-3 inline-flex rounded-full border border-emerald-200 bg-white/75 px-3 py-2 text-[10px] font-semibold text-emerald-700 lg:mt-0">출처: 서울 열린데이터광장 · 한국문화정보원</span>
+              </div>
+
+              <div className="mt-5 space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                  <span className="w-20 shrink-0 pt-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">진행 상태</span>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="문화행사 상태 필터">
+                    {[
+                      { key: 'all', label: '전체' },
+                      { key: 'ongoing', label: '진행 중' },
+                      { key: 'upcoming', label: '예정' }
+                    ].map(option => {
+                      const isActive = cultureEventFilter === option.key;
                       return (
                         <button
-                          key={category.key}
+                          key={option.key}
                           type="button"
-                          onClick={() => {
-                            setEducationCategory(category.key);
-                            setEducationPage(0);
-                          }}
-                          className={`text-left rounded-xl border p-4 transition-colors ${
-                            isActive ? category.active : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'
+                          aria-pressed={isActive}
+                          onClick={() => setCultureEventFilter(option.key)}
+                          className={`rounded-full border px-3 py-2 text-xs font-extrabold transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+                            isActive
+                              ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50'
                           }`}
                         >
-                          <GraduationCap className={`${category.color} mb-2`} size={24} />
-                          <span className="text-xs font-bold opacity-70">{category.label}</span>
-                          <p className="text-2xl font-extrabold mt-1">{formatCount(category.count, '개교')}</p>
+                          {option.label} {cultureEventCounts[option.key]}
                         </button>
                       );
                     })}
                   </div>
+                </div>
+                <div className="flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:items-start">
+                  <span className="w-20 shrink-0 pt-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">행사 유형</span>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="문화행사 유형 필터">
+                    {cultureEventCategories.map(category => {
+                      const isActive = cultureEventCategory === category.key;
+                      return (
+                        <button
+                          key={category.key}
+                          type="button"
+                          aria-pressed={isActive}
+                          onClick={() => setCultureEventCategory(category.key)}
+                          className={`rounded-full border px-3 py-2 text-xs font-extrabold transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 ${
+                            isActive
+                              ? 'border-teal-700 bg-teal-700 text-white shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:bg-teal-50'
+                          }`}
+                        >
+                          {category.label} {category.count}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:items-center">
+                  <label htmlFor="culture-event-sort" className="w-20 shrink-0 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">정렬 기준</label>
+                  <select
+                    id="culture-event-sort"
+                    value={cultureEventSort}
+                    onChange={event => setCultureEventSort(event.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 sm:w-64"
+                  >
+                    <option value="statusDate">진행 중 우선 · 시작일순</option>
+                    <option value="startAsc">시작일 빠른순</option>
+                    <option value="startDesc">시작일 늦은순</option>
+                    <option value="endAsc">종료일 임박순</option>
+                    <option value="titleAsc">행사명 가나다순</option>
+                    <option value="categoryAsc">행사 유형순</option>
+                  </select>
+                </div>
+              </div>
 
-                  <div className={`mt-5 rounded-xl border p-4 ${activeEducationCategory.active}`}>
+              {visibleCultureEvents.length > 0 ? (
+                <>
+                  <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <div className="hidden grid-cols-[110px_minmax(0,1.5fr)_190px_minmax(180px,0.9fr)_140px_80px] gap-3 border-b border-slate-200 bg-slate-100 px-4 py-2.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 lg:grid">
+                      <span>상태·유형</span>
+                      <span>행사명</span>
+                      <span>일정</span>
+                      <span>장소</span>
+                      <span>주최·출처</span>
+                      <span className="text-right">링크</span>
+                    </div>
+                    <div className="divide-y divide-slate-200" role="list" aria-label="문화행사 목록">
+                      {visibleCultureEvents.map(eventItem => {
+                        const eventUrl = getSafeExternalUrl(eventItem.link);
+                        const isOngoing = eventItem.status === 'ongoing';
+                        return (
+                          <article
+                            key={`${eventItem.title}-${eventItem.startDate}-${eventItem.place}`}
+                            role="listitem"
+                            className="grid grid-cols-1 gap-3 px-3 py-4 transition-colors hover:bg-emerald-50/50 sm:px-4 lg:grid-cols-[110px_minmax(0,1.5fr)_190px_minmax(180px,0.9fr)_140px_80px] lg:items-center"
+                          >
+                            <div className="flex flex-wrap items-center gap-1.5 lg:block lg:space-y-1.5">
+                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+                                isOngoing ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {isOngoing ? '진행 중' : '예정'}
+                              </span>
+                              <span className="inline-flex max-w-full rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600 lg:block lg:w-fit lg:max-w-[100px] lg:truncate">{eventItem.category}</span>
+                            </div>
+                            <div className="min-w-0">
+                              <h5 className="line-clamp-2 text-sm font-extrabold leading-snug text-slate-900">{eventItem.title}</h5>
+                              {eventItem.target && (
+                                <p className="mt-1 flex min-w-0 items-center gap-1 text-[10px] font-semibold text-slate-500">
+                                  <Users size={12} className="shrink-0 text-blue-500" />
+                                  <span className="truncate">{eventItem.target}</span>
+                                </p>
+                              )}
+                            </div>
+                            <p className="flex gap-2 text-xs font-semibold text-slate-600">
+                              <Calendar size={14} className="mt-0.5 shrink-0 text-emerald-600" />
+                              <span>
+                                <time dateTime={eventItem.startDate}>{eventItem.startDate || '일정 확인 필요'}</time>
+                                {eventItem.endDate && eventItem.endDate !== eventItem.startDate ? ` – ${eventItem.endDate}` : ''}
+                              </span>
+                            </p>
+                            <p className="flex min-w-0 gap-2 text-xs font-semibold text-slate-600">
+                              <MapPin size={14} className="mt-0.5 shrink-0 text-emerald-600" />
+                              <span className="line-clamp-2">{eventItem.place}</span>
+                            </p>
+                            <div className="min-w-0">
+                              <p className="truncate text-[10px] font-bold text-slate-600">{eventItem.organizer || '주최기관 확인 필요'}</p>
+                              {eventItem.sourceLabel && <p className="mt-1 truncate text-[10px] font-semibold text-slate-400">{eventItem.sourceLabel}</p>}
+                              {(eventItem.fee || eventItem.isFree) && <p className="mt-1 truncate text-[10px] font-extrabold text-emerald-700">{eventItem.fee || eventItem.isFree}</p>}
+                            </div>
+                            <div className="flex justify-end">
+                              {eventUrl ? (
+                                <a href={eventUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[10px] font-extrabold text-emerald-700 hover:text-emerald-900 hover:underline">
+                                  상세 <ChevronRight size={12} />
+                                </a>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-slate-300">—</span>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[10px] font-bold text-slate-500">
+                      {safeCultureEventPage * cultureEventPageSize + 1}-{Math.min((safeCultureEventPage + 1) * cultureEventPageSize, filteredCultureEvents.length)} / {filteredCultureEvents.length}건 표시
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCultureEventPage(previous => Math.max(0, previous - 1))}
+                        disabled={safeCultureEventPage === 0}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        이전
+                      </button>
+                      <span className="min-w-14 text-center text-xs font-extrabold text-slate-600">{safeCultureEventPage + 1}/{cultureEventPageCount}</span>
+                      <button
+                        type="button"
+                        onClick={() => setCultureEventPage(previous => Math.min(cultureEventPageCount - 1, previous + 1))}
+                        disabled={safeCultureEventPage >= cultureEventPageCount - 1}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        다음
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+                  <p className="text-sm font-extrabold text-slate-700">표시할 문화행사가 없습니다.</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">선택한 상태와 유형에 해당하는 행사가 API에 등록되면 이곳에 표시됩니다.</p>
+                </div>
+              )}
+            </section>
+
+            <section className="order-1 min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="culture-facilities-title">
+              <div className="relative -mx-4 -mt-4 mb-5 overflow-hidden rounded-t-2xl border-b border-teal-200 bg-gradient-to-r from-teal-100 via-emerald-50 to-white px-4 py-5 sm:-mx-6 sm:-mt-6 sm:px-6 sm:py-6 lg:flex lg:items-center lg:justify-between lg:gap-4">
+                <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-teal-200/35" aria-hidden="true" />
+                <div className="relative flex items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white shadow-sm" aria-hidden="true"><Landmark size={21} /></span>
+                  <div>
+                    <h4 id="culture-facilities-title" className="text-lg font-extrabold text-teal-950">자치구 문화시설 지도</h4>
+                    <p className="mt-1 text-xs font-semibold text-teal-900/65">{selectedGu}의 문화시설을 유형별로 보고, 목록에서 선택한 시설의 위치를 강조합니다.</p>
+                  </div>
+                </div>
+                <span className="relative mt-3 inline-flex rounded-full border border-teal-200 bg-white/75 px-3 py-2 text-[10px] font-semibold text-teal-700 lg:mt-0 lg:max-w-sm lg:text-right">문화시설: 카카오맵 장소검색 · 도서관: 내부 매핑 정보 · 지도 배경: OpenStreetMap</span>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-7" role="group" aria-label="문화시설 유형 선택">
+                {cultureFacilityCategories.map(category => {
+                  const isActive = cultureFacilityCategory === category.key;
+                  return (
+                    <button
+                      key={category.key}
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => setCultureFacilityCategory(category.key)}
+                      className={`flex min-h-14 items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2 ${
+                        isActive
+                          ? 'border-teal-300 bg-teal-50 text-teal-950 shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:bg-teal-50/60'
+                      }`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-3 w-3 shrink-0 rounded-full ring-2 ring-white" style={{ backgroundColor: category.color }} aria-hidden="true" />
+                        <span className="line-clamp-2 text-[11px] font-extrabold leading-tight">{category.label}</span>
+                      </span>
+                      <span className="shrink-0 text-sm font-black tabular-nums">{category.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {cultureFacilityMapFacilities.length > 0 ? (
+                <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                  <section className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-slate-50/70 p-3" aria-labelledby="culture-facilities-map-title">
+                    <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h5 id="culture-facilities-map-title" className="flex items-center gap-1.5 text-sm font-extrabold text-slate-800">
+                          <MapPinned size={16} className="text-teal-700" />
+                          {cultureFacilityCategories.find(category => category.key === cultureFacilityCategory)?.label} 위치
+                        </h5>
+                        <p className="mt-1 text-[10px] font-semibold text-slate-500">선택한 유형 전체를 표시하며, 도서관 마커는 유형과 관계없이 고정됩니다.</p>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-teal-700">
+                        마커 {cultureFacilityMappedCount}개 · 목록 {filteredCultureFacilities.length}개
+                        {fixedCultureFacilityLibraryCount > 0 ? ` · 도서관 ${fixedCultureFacilityLibraryCount}개 고정` : ''}
+                      </span>
+                    </div>
+                    <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1.5" aria-label="문화시설 유형별 마커 색상">
+                      {cultureFacilityTypes.slice(1).filter(type => cultureFacilityCategories.find(category => category.key === type.key)?.count > 0).map(type => (
+                        <span key={`culture-facility-legend-${type.key}`} className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                          <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: type.color }} aria-hidden="true" />
+                          {type.label}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="relative h-80 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 2xl:h-auto 2xl:min-h-[34rem] 2xl:flex-1">
+                      <div ref={cultureFacilityMapContainerRef} className="h-full min-h-80 w-full" role="region" aria-label={`${selectedGu} 문화시설 위치 지도`} />
+                      {cultureFacilityMapError && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-slate-50/95 p-6 text-center">
+                          <div>
+                            <MapPin size={24} className="mx-auto text-slate-400" />
+                            <p className="mt-2 text-xs font-extrabold text-slate-600">지도를 표시하지 못했습니다.</p>
+                            <p className="mt-1 text-[10px] font-semibold leading-relaxed text-slate-500">{cultureFacilityMapError}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <div className="min-w-0 space-y-3">
+                    {visibleCultureFacilities.length > 0 ? (
+                    <>
+                    <div className="grid grid-cols-1 gap-3">
+                      {visibleCultureFacilities.map(facility => {
+                        const facilityKey = String(facility.id || `${facility.name}|${facility.address}`);
+                        const isSelected = selectedCultureFacilityKey === facilityKey;
+                        const placeUrl = getSafeExternalUrl(facility.placeUrl);
+                        return (
+                          <article key={facilityKey} className={`rounded-xl border p-3 transition-all ${isSelected ? 'border-teal-300 bg-teal-50 shadow-sm ring-2 ring-teal-100' : 'border-slate-200 bg-white'}`}>
+                            <button
+                              type="button"
+                              aria-pressed={isSelected}
+                              onClick={() => setSelectedCultureFacilityKey(facilityKey)}
+                              className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-extrabold text-slate-800">{facility.name}</p>
+                                  <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-500">{facility.address || '주소 정보 없음'}</p>
+                                </div>
+                                <span className="shrink-0 rounded-full px-2 py-1 text-[9px] font-extrabold text-white" style={{ backgroundColor: cultureFacilityColors[facility.typeKey] || cultureFacilityColors.other }}>
+                                  {facility.typeLabel || '문화시설'}
+                                </span>
+                              </div>
+                            </button>
+                            <div className="mt-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-2">
+                              <span className="truncate text-[10px] font-semibold text-slate-500">{facility.phone || facility.categoryName || '시설 정보 확인'}</span>
+                              {placeUrl && (
+                                <a href={placeUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[10px] font-extrabold text-teal-700 hover:text-teal-900">
+                                  카카오맵 <ChevronRight size={12} />
+                                </a>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-[10px] font-bold text-slate-500">{cultureFacilityRangeStart}-{cultureFacilityRangeEnd} / {filteredCultureFacilities.length}개 시설 표시</p>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setCultureFacilityPage(previous => Math.max(0, previous - 1))} disabled={safeCultureFacilityPage === 0} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">이전</button>
+                        <span className="min-w-14 text-center text-xs font-extrabold text-slate-600">{safeCultureFacilityPage + 1}/{cultureFacilityPageCount}</span>
+                        <button type="button" onClick={() => setCultureFacilityPage(previous => Math.min(cultureFacilityPageCount - 1, previous + 1))} disabled={safeCultureFacilityPage >= cultureFacilityPageCount - 1} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">다음</button>
+                      </div>
+                    </div>
+                    </>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center">
+                        <p className="text-sm font-extrabold text-slate-700">선택한 유형의 문화시설이 없습니다.</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">도서관 마커는 지도에 계속 표시됩니다.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+                  <p className="text-sm font-extrabold text-slate-700">표시할 문화시설이 없습니다.</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {districtData?.cultureAndEducation?.cultureFacilitySourceStatus === 'missing_key'
+                      ? '서버의 카카오 REST API 키 설정을 확인해 주세요.'
+                      : '카카오맵 장소검색 결과가 없거나 일시적으로 불러오지 못했습니다.'}
+                  </p>
+                </div>
+              )}
+            </section>
+            </section>
+            )}
+
+            {/* 교육 인프라 분석 */}
+            {cultureEducationSubTab === 'education' && (
+            <section id="culture-education-panel-education" role="tabpanel" aria-labelledby="culture-education-tab-education" className="order-[70] space-y-4 overflow-hidden rounded-[1.75rem] border border-indigo-200/80 bg-indigo-50/45 p-3 shadow-sm sm:p-4">
+              <header className="-mx-3 -mt-3 border-b border-indigo-700/25 bg-indigo-600 p-4 text-white shadow-sm sm:-mx-4 sm:-mt-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/15 text-sm font-black text-white">03</span>
+                <div>
+                  <h3 id="education-group-title" className="flex items-center gap-2 text-base font-black text-white">
+                    <GraduationCap size={18} className="text-white" /> 교육 환경
+                  </h3>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-white/80">학교 분포와 도서관 연계 가능성을 확인하는 영역</p>
+                </div>
+              </div>
+              </header>
+
+            <MetricInterpretationPanel
+              packet={generatedInterpretations?.education}
+              tone="indigo"
+              loading={llmLoading}
+              error={llmError}
+              variant="strip"
+              pendingTitle="교육 인프라 해석"
+              staleSnapshot={isSectionSnapshotStale('education')}
+              summaryText={getReportCoreInterpretation(4)}
+            />
+
+            <div className="grid grid-cols-1 gap-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col justify-between">
+                <div>
+                  <div className="relative -mx-4 -mt-4 mb-5 overflow-hidden rounded-t-2xl border-b border-indigo-200 bg-gradient-to-r from-indigo-100 via-violet-50 to-blue-50 px-4 py-5 sm:-mx-6 sm:-mt-6 sm:px-6 sm:py-6 lg:flex lg:items-center lg:justify-between lg:gap-4">
+                    <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-indigo-200/35" aria-hidden="true" />
+                    <div className="relative flex items-start gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm" aria-hidden="true">
+                        <School size={21} />
+                      </span>
+                      <div>
+                        <h4 className="text-lg font-extrabold text-indigo-950">교육기관 인프라</h4>
+                        <p className="mt-1 text-xs font-semibold text-indigo-900/65">학교급을 선택하면 해당 자치구 내 학교명과 주소를 목록으로 확인합니다.</p>
+                      </div>
+                    </div>
+                    <span className="relative mt-3 inline-flex rounded-full border border-indigo-200 bg-white/75 px-3 py-2 text-[10px] font-semibold text-indigo-700 lg:mt-0 lg:max-w-sm lg:text-right">
+                      출처: 서울 열린데이터광장(나이스 학교 정보 및 대학 전문대학 DB API)
+                    </span>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                      <div className="shrink-0 lg:w-36">
+                        <p className="text-xs font-extrabold text-slate-800">학교급 지도 필터</p>
+                        <p className="mt-1 text-[10px] font-semibold text-slate-500">지도·목록 함께 변경</p>
+                      </div>
+                      <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" role="group" aria-label="학교급 선택">
+                        {educationCategories.map(category => {
+                          const isActive = activeEducationCategory.key === category.key;
+                          const markerColor = educationMarkerColors[category.key] || '#475569';
+                          return (
+                            <button
+                              key={category.key}
+                              type="button"
+                              aria-pressed={isActive}
+                              onClick={() => {
+                                setEducationCategory(category.key);
+                                setEducationPage(0);
+                              }}
+                              className={`flex min-h-14 items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                                isActive
+                                  ? `${category.active} shadow-sm ring-2 ring-white`
+                                  : 'border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm'
+                              }`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white bg-white shadow-sm" aria-hidden="true">
+                                  <GraduationCap size={17} style={{ color: markerColor }} />
+                                </span>
+                                <span className="truncate text-xs font-extrabold">{category.label}</span>
+                              </span>
+                              <span className="shrink-0 text-base font-black tabular-nums">{category.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-slate-900">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
                       <div>
                         <p className="text-[10px] font-extrabold opacity-70">선택 교육기관</p>
@@ -1404,42 +2544,105 @@ function App() {
                     </div>
 
                     {activeEducationList.length > 0 ? (
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          {pagedEducationList.map((school, index) => (
-                            <div
-                              key={`${school.name}-${safeEducationPage}-${index}`}
-                              className="min-h-16 rounded-lg border border-white/70 bg-white px-3 py-2.5"
-                            >
-                              <p className="text-sm font-extrabold text-slate-800 truncate">{school.name || '-'}</p>
-                              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed line-clamp-2">{school.address || '주소 정보 없음'}</p>
+                      <div className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                        <section className="flex h-full min-w-0 flex-col rounded-xl border border-white/70 bg-white p-3" aria-labelledby="education-map-title">
+                          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <h6 id="education-map-title" className="flex items-center gap-1.5 text-sm font-extrabold text-slate-800">
+                                <MapPin size={16} className="text-indigo-600" />
+                                {activeEducationCategory.label} 전체 위치
+                              </h6>
+                              <p className="mt-1 text-[10px] font-semibold text-slate-500">선택한 학교급 전체와 자치구 도서관 위치를 함께 표시합니다.</p>
                             </div>
-                          ))}
-                        </div>
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <p className="text-[10px] font-bold opacity-70">
-                            {educationRangeStart}-{educationRangeEnd} / {activeEducationList.length}개교 표시
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setEducationPage(prev => Math.max(0, prev - 1))}
-                              disabled={safeEducationPage === 0}
-                              className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
-                            >
-                              이전
-                            </button>
-                            <span className="min-w-14 text-center text-xs font-extrabold opacity-70">
-                              {safeEducationPage + 1}/{educationTotalPages}
+                            <span className="text-[10px] font-extrabold text-indigo-700">학교 마커 {educationMappedCount}개 · 도서관 {educationMapLibraries.length}개</span>
+                          </div>
+                          <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1.5" aria-label="학교급별 마커 색상">
+                            {schoolTypeCategories.map(category => (
+                              <span key={`education-map-legend-${category.key}`} className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                                <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: educationMarkerColors[category.key] }} aria-hidden="true" />
+                                {category.label}
+                              </span>
+                            ))}
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700">
+                              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[9px] ring-2 ring-white" aria-hidden="true">📚</span>
+                              도서관
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => setEducationPage(prev => Math.min(educationTotalPages - 1, prev + 1))}
-                              disabled={safeEducationPage >= educationTotalPages - 1}
-                              className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
-                            >
-                              다음
-                            </button>
+                          </div>
+                          <div className="relative h-80 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 2xl:h-auto 2xl:min-h-[34rem] 2xl:flex-1">
+                            <div
+                              ref={educationMapContainerRef}
+                              className="h-full min-h-80 w-full"
+                              role="region"
+                              aria-label={`${activeEducationCategory.label} 전체 위치 지도`}
+                            />
+                            {educationMapError && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-slate-50/95 p-6 text-center">
+                                <div>
+                                  <MapPin size={24} className="mx-auto text-slate-400" />
+                                  <p className="mt-2 text-xs font-extrabold text-slate-600">지도를 표시하지 못했습니다.</p>
+                                  <p className="mt-1 text-[10px] font-semibold leading-relaxed text-slate-500">{educationMapError}</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </section>
+
+                        <div className="min-w-0 space-y-3">
+                          <div className="grid grid-cols-1 gap-3">
+                            {pagedEducationList.map((school, index) => (
+                              <button
+                                key={`${school.name}-${safeEducationPage}-${index}`}
+                                type="button"
+                                onClick={() => setSelectedEducationSchoolKey(`${school.name}|${school.address}`)}
+                                aria-pressed={selectedEducationSchoolKey === `${school.name}|${school.address}`}
+                                className={`min-h-16 rounded-lg border px-3 py-2.5 text-left transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                                  selectedEducationSchoolKey === `${school.name}|${school.address}`
+                                    ? 'border-indigo-300 bg-indigo-50 shadow-sm ring-2 ring-indigo-200'
+                                    : 'border-white/70 bg-white hover:border-indigo-200 hover:bg-indigo-50/60'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="truncate text-sm font-extrabold text-slate-800">{school.name || '-'}</p>
+                                  <div className="flex shrink-0 items-center gap-1.5">
+                                    {educationCategory === 'all' && (
+                                      <span className="rounded-full px-2 py-0.5 text-[9px] font-extrabold text-white" style={{ backgroundColor: educationMarkerColors[school.gradeKey] }}>
+                                        {school.category || schoolTypeCategories.find(category => category.key === school.gradeKey)?.label}
+                                      </span>
+                                    )}
+                                    {selectedEducationSchoolKey === `${school.name}|${school.address}` && (
+                                      <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[9px] font-extrabold text-white">선택됨</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-500">{school.address || '주소 정보 없음'}</p>
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-[10px] font-bold opacity-70">
+                              {educationRangeStart}-{educationRangeEnd} / {activeEducationList.length}개교 표시
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEducationPage(prev => Math.max(0, prev - 1))}
+                                disabled={safeEducationPage === 0}
+                                className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+                              >
+                                이전
+                              </button>
+                              <span className="min-w-14 text-center text-xs font-extrabold opacity-70">
+                                {safeEducationPage + 1}/{educationTotalPages}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setEducationPage(prev => Math.min(educationTotalPages - 1, prev + 1))}
+                                disabled={safeEducationPage >= educationTotalPages - 1}
+                                className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+                              >
+                                다음
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1451,48 +2654,40 @@ function App() {
                     )}
                   </div>
 
-                  <div className="mt-5">
-                    <MetricInterpretationPanel
-                      packet={generatedInterpretations?.education}
-                      tone="indigo"
-                      loading={llmLoading}
-                      error={llmError}
-                      variant="strip"
-                      pendingTitle="교육 인프라 해석"
-                      staleSnapshot={isSectionSnapshotStale('education')}
-                      onRegenerate={() => regenerateInterpretationSection('education')}
-                      regenerating={regeneratingSection === 'education'}
-                    />
-                  </div>
                 </div>
               </div>
             </div>
+            </section>
+            )}
+              </>
+            )}
 
             {/* 사회안전망 대상자 구성 분석 */}
-            {activeSocialSafetySection && (
+            {districtSectionTab === 'welfare' && activeSocialSafetySection && (
+              <>
+              <MetricInterpretationPanel
+                packet={socialSafetyAiInsight}
+                tone="indigo"
+                loading={llmLoading}
+                error={llmError}
+                className="order-[75]"
+                variant="strip"
+                pendingTitle="사회안전망 종합 해석"
+                pendingMessage="가구·장애·외국인 구성 해석이 생성되면 이 영역에 종합 판단이 표시됩니다."
+                staleSnapshot={isSectionSnapshotStale('socialSafety')}
+                summaryText={getReportCoreInterpretation(5)}
+              />
+
               <section className="order-[80] bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-6">
+                <div className={`-mx-4 -mt-4 mb-5 flex flex-col gap-3 rounded-t-2xl border-b p-4 text-white transition-colors duration-200 sm:-mx-6 sm:-mt-6 sm:p-6 lg:flex-row lg:items-start lg:justify-between ${activeSocialSafetySection.theme.header}`}>
                   <div>
-                    <h4 className="font-extrabold text-lg text-slate-800 flex items-center gap-2"><Shield size={20} className="text-blue-600" />사회안전망 대상자 구성 분석</h4>
+                    <h4 className="flex items-center gap-2 text-lg font-extrabold text-white">
+                      <Shield size={20} />사회안전망 대상자 구성 분석
+                    </h4>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-medium lg:text-right">
+                  <span className="text-[10px] font-semibold text-white/85 lg:text-right">
                     출처: {getSocialIndicatorSourceLabel(districtData.socialIndicators)}
                   </span>
-                </div>
-
-                <div className="mb-5">
-                  <MetricInterpretationPanel
-                    packet={socialSafetyAiInsight}
-                    tone="indigo"
-                    loading={llmLoading}
-                    error={llmError}
-                    variant="strip"
-                    pendingTitle="사회안전망 종합 해석"
-                    pendingMessage="가구·장애·외국인 구성 해석이 생성되면 이 영역에 종합 판단이 표시됩니다."
-                    staleSnapshot={isSectionSnapshotStale('socialSafety')}
-                    onRegenerate={() => regenerateInterpretationSection('socialSafety')}
-                    regenerating={regeneratingSection === 'socialSafety'}
-                  />
                 </div>
 
                 <div className="flex gap-3 overflow-x-auto pb-2 mb-5">
@@ -1526,6 +2721,18 @@ function App() {
                       </button>
                     );
                   })}
+                </div>
+
+                <div className="mb-5">
+                  <MetricInterpretationPanel
+                    packet={activeSocialSafetySegmentInsight}
+                    tone={activeSocialSafetySegmentTone}
+                    variant="strip"
+                    pendingTitle={`${activeSocialSafetySection.label} 해석`}
+                    pendingMessage="선택한 대상자 구성에 대한 인사이트가 생성되면 이 영역에 표시됩니다."
+                    staleSnapshot={isSectionSnapshotStale('socialSafety')}
+                    showSummary={false}
+                  />
                 </div>
 
                 {activeSocialSafetySection.key === 'foreign' ? (
@@ -1650,21 +2857,11 @@ function App() {
                   </div>
                 )}
 
-                <div className="mt-5">
-                  <MetricInterpretationPanel
-                    packet={activeSocialSafetySegmentInsight}
-                    tone={activeSocialSafetySegmentTone}
-                    variant="strip"
-                    pendingTitle={`${activeSocialSafetySection.label} 해석`}
-                    pendingMessage="선택한 대상자 구성에 대한 인사이트가 생성되면 이 영역에 표시됩니다."
-                    staleSnapshot={isSectionSnapshotStale('socialSafety')}
-                    onRegenerate={() => regenerateInterpretationSection('socialSafety')}
-                    regenerating={regeneratingSection === 'socialSafety'}
-                  />
-                </div>
               </section>
+              </>
             )}
 
+            </div>
           </div>
         )}
 
@@ -1812,33 +3009,36 @@ function App() {
                 <div>
                   <h4 className="font-extrabold text-lg text-slate-800 mb-2 flex items-center gap-2"><MapPinned size={20} className="text-blue-600" />{libraryTargetName} 주변 입지 분석</h4>
                   <p className="text-xs text-slate-400 mb-4">
-                    빨간색 원: 1km 반경 (문화행사 연동) | 파란색 원: 2km 반경 (공공기관 연동)
+                    빨간색 원: 1km 참고 범위 | 파란색 원: 2km 주변 시설·문화행사 검색 범위
                   </p>
                 </div>
-                <div 
-                  ref={mapContainerRef} 
-                  className="w-full bg-slate-100 rounded-xl border border-slate-200 flex-grow relative"
-                  style={{ minHeight: '450px' }}
-                >
+                <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2" aria-label="개별 도서관 지도 마커 범례">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-blue-700" aria-hidden="true" />📚 기준 도서관·입력 위치</span>
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-indigo-600" aria-hidden="true" />🏛️ 공공기관</span>
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-rose-600" aria-hidden="true" />🏛️ 문화시설</span>
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-emerald-600" aria-hidden="true" />🎭 주변 문화행사</span>
+                </div>
+                <div className="relative min-h-[450px] w-full flex-grow overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                  <div
+                    ref={mapContainerRef}
+                    className="h-full min-h-[450px] w-full"
+                    role="region"
+                    aria-label={`${libraryTargetName} 주변 입지 지도`}
+                  />
                   {mapError && (
-                    <div className="absolute inset-0 bg-slate-900/90 text-white p-6 flex flex-col justify-center items-center rounded-xl z-10">
+                    <div className="absolute inset-0 z-[1000] flex flex-col items-center justify-center rounded-xl bg-slate-900/90 p-6 text-white">
                       <div className="bg-rose-500/20 text-rose-100 p-5 rounded-xl border border-rose-400/30 max-w-md text-center">
                         <p className="font-extrabold text-lg">지도 정보를 불러오지 못했습니다</p>
                         <p className="text-xs mt-2 text-rose-100/80">{mapError}</p>
                         <p className="text-xs mt-3 text-slate-300 leading-relaxed">
-                          주변 공공기관·문화시설 목록과 행정동 정보는 계속 확인할 수 있습니다. 지도 도메인 설정은 관리자 환경에서 점검이 필요합니다.
+                          주변 공공기관·문화시설 목록과 행정동 정보는 계속 확인할 수 있습니다.
                         </p>
                       </div>
                     </div>
                   )}
-                  {!mapLoaded && !mapError && (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-slate-400 font-semibold">카카오 지도 모듈을 로딩하는 중...</p>
-                    </div>
-                  )}
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium mt-3 text-right">
-                  출처: 카카오 맵 API SDK
+                  주변 시설 데이터: 카카오 Local REST API · 지도 배경: OpenStreetMap
                 </div>
 
                 <div className="mt-6 border-t border-slate-100 pt-5">
@@ -1912,8 +3112,23 @@ function App() {
                           <span className="text-right">거리</span>
                         </div>
                         <div className="divide-y divide-slate-100">
-                          {visiblePublicPlaces.map((place, idx) => (
-                            <div key={`${place.name}-${idx}`} className="grid grid-cols-1 md:grid-cols-[120px_1fr_90px] gap-2 md:gap-3 px-4 py-3 items-center hover:bg-slate-50/70">
+                          {visiblePublicPlaces.map(place => {
+                            const placeKey = getPublicPlaceKey(place);
+                            const isSelected = selectedPublicPlaceKey === placeKey;
+                            return (
+                            <button
+                              key={placeKey}
+                              type="button"
+                              aria-pressed={isSelected}
+                              onClick={() => setSelectedPublicPlaceKey(placeKey)}
+                              className={`grid w-full grid-cols-1 items-center gap-2 px-4 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-inset md:grid-cols-[120px_1fr_90px] md:gap-3 ${
+                                isSelected
+                                  ? place.category === '문화시설'
+                                    ? 'bg-rose-50 ring-2 ring-inset ring-rose-200'
+                                    : 'bg-indigo-50 ring-2 ring-inset ring-indigo-200'
+                                  : 'hover:bg-slate-50/70'
+                              }`}
+                            >
                               <span className={`w-fit rounded-full px-2 py-1 text-[10px] font-extrabold ${
                                 place.category === '문화시설'
                                   ? 'bg-rose-50 text-rose-600'
@@ -1928,8 +3143,9 @@ function App() {
                               <p className="text-xs font-extrabold text-slate-600 md:text-right">
                                 {place.distance.toLocaleString()}m
                               </p>
-                            </div>
-                          ))}
+                            </button>
+                            );
+                          })}
                         </div>
                       </div>
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -1985,31 +3201,74 @@ function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between" style={{ maxHeight: '350px' }}>
+              <div className="flex max-h-[430px] flex-col justify-between rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div>
-                  <h4 className="font-extrabold text-lg text-slate-800 mb-4 flex items-center gap-2">
+                  <h4 className="flex items-center gap-2 text-lg font-extrabold text-slate-800">
                     <Theater size={20} className="text-emerald-600" />
-                    주변 문화행사 상세정보 {isAddressTarget ? '(2km)' : '(2km / 자치구 내)'}
+                    주변 문화행사 상세정보 (2km)
                   </h4>
-                  <div className="overflow-y-auto space-y-3 pr-2" style={{ maxHeight: '220px' }}>
-                    {libraryDataDetail.infrastructure.nearbyEvents && libraryDataDetail.infrastructure.nearbyEvents.length > 0 ? (
-                      libraryDataDetail.infrastructure.nearbyEvents.map((e, idx) => (
-                        <div key={idx} className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4">
-                          <p className="font-bold text-sm text-slate-800">{e.title}</p>
-                          <p className="text-xs text-slate-500 mt-1">장소: {e.place}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">📅 기간: {e.startDate} ~ {e.endDate}</p>
-                          <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full mt-2 inline-block">
-                            {typeof e.distance === 'number' ? `${distanceOriginLabel}에서 ${e.distance.toLocaleString()}m` : e.distance}
-                          </span>
-                        </div>
-                      ))
+                  <p className="mt-1 text-[10px] font-semibold text-slate-500">서울 열린데이터광장과 한국문화정보원 결과를 중복 제거 후 거리순으로 통합합니다.</p>
+                  <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="주변 문화행사 데이터 원천 필터">
+                    {[
+                      { key: 'all', label: '전체' },
+                      { key: 'seoul', label: '서울 열린데이터광장' },
+                      { key: 'kcisa', label: '한국문화정보원' }
+                    ].map(sourceOption => {
+                      const isActive = nearbyEventSourceFilter === sourceOption.key;
+                      return (
+                        <button
+                          key={sourceOption.key}
+                          type="button"
+                          aria-pressed={isActive}
+                          onClick={() => setNearbyEventSourceFilter(sourceOption.key)}
+                          className={`rounded-full border px-3 py-1.5 text-[10px] font-extrabold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${
+                            isActive
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50'
+                          }`}
+                        >
+                          {sourceOption.label} {nearbyEventSourceCounts[sourceOption.key]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-4 max-h-[250px] space-y-3 overflow-y-auto pr-2">
+                    {filteredNearbyCultureEvents.length > 0 ? (
+                      filteredNearbyCultureEvents.map((eventItem, index) => {
+                        const eventUrl = getSafeExternalUrl(eventItem.link);
+                        const isOngoing = eventItem.status === 'ongoing';
+                        return (
+                        <article key={`${eventItem.title}-${eventItem.startDate}-${eventItem.place}-${index}`} className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2 py-1 text-[9px] font-extrabold ${isOngoing ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {isOngoing ? '진행 중' : '예정'}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[9px] font-extrabold text-slate-600">{eventItem.sourceLabel}</span>
+                            <span className="text-[9px] font-bold text-slate-400">{eventItem.category}</span>
+                          </div>
+                          <p className="mt-2 text-sm font-bold text-slate-800">{eventItem.title}</p>
+                          <p className="mt-1 text-xs text-slate-500">장소: {eventItem.place}</p>
+                          <p className="mt-0.5 text-xs text-slate-400">📅 기간: {eventItem.startDate} ~ {eventItem.endDate}</p>
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <span className="inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                              {typeof eventItem.distance === 'number' ? `${distanceOriginLabel}에서 ${eventItem.distance.toLocaleString()}m` : eventItem.distance}
+                            </span>
+                            {eventUrl && (
+                              <a href={eventUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[10px] font-extrabold text-emerald-700 hover:text-emerald-900">
+                                상세 보기 <ChevronRight size={12} />
+                              </a>
+                            )}
+                          </div>
+                        </article>
+                        );
+                      })
                     ) : (
-                      <p className="text-slate-400 text-sm font-semibold text-center py-12">현재 진행 중인 문화행사가 없습니다.</p>
+                      <p className="py-12 text-center text-sm font-semibold text-slate-400">선택한 원천에서 확인된 주변 문화행사가 없습니다.</p>
                     )}
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-3 mt-3 text-right">
-                  출처: 서울 열린데이터광장(문화행사 정보 API)
+                  출처: 서울 열린데이터광장 · 한국문화정보원 / 좌표 간 직선거리 계산
                 </div>
               </div>
             </div>
@@ -2023,6 +3282,15 @@ function App() {
       <footer className="bg-white border-t border-slate-200 py-8 mt-12">
         <div className="max-w-7xl mx-auto px-4 text-center text-slate-400 text-xs font-semibold">
           <p>© 2026 LIBscope Dashboard. 서울특별시 공공도서관 및 행정동 생활인구 API(백업 포함) 연동 서비스.</p>
+          <p className="mt-2">
+            문의·요청:{' '}
+            <a
+              href="mailto:geun9265@gmail.com"
+              className="font-bold text-blue-600 underline decoration-blue-200 underline-offset-2 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            >
+              geun9265@gmail.com
+            </a>
+          </p>
         </div>
       </footer>
     </div>

@@ -1,1 +1,7 @@
 @import "tailwindcss";
+
+/* Leaflet panes use z-index values up to 1,000; contain them below sticky UI. */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
+}

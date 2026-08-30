@@ -66,7 +66,7 @@ function normalizeFiveYearAgeDistribution(ageDistribution = {}) {
     const value = Number(rawValue || 0);
     if (!Number.isFinite(value) || !value || label === '총인구') return;
 
-    const range = String(label).match(/^(\d{1,3})-(\d{1,3})세$/);
+    const range = String(label).match(/^(\d{1,3})[-~](\d{1,3})세$/);
     if (range) {
       const start = Number(range[1]);
       const end = Number(range[2]);
@@ -161,6 +161,27 @@ function rowsToPopulationSummary(rows, source) {
   return summary;
 }
 
+function rowsToDongPopulationBreakdown(rows, source) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const latestByDong = new Map();
+  rows.forEach(row => {
+    if (row.dong && !latestByDong.has(row.dong)) latestByDong.set(row.dong, row);
+  });
+
+  return [...latestByDong.values()]
+    .map(row => {
+      const summary = rowsToPopulationSummary([row], source);
+      return {
+        dong: row.dong,
+        total: summary?.total || 0,
+        ageDistribution: summary?.ageDistribution || {},
+        referenceDate: summary?.referenceDate || row.reference_date || null
+      };
+    })
+    .filter(row => row.total > 0);
+}
+
 async function fetchDistrictResidentPopulation(gu) {
   const rows = await supabaseFetch('district_metrics', {
     select: 'metric_value,metric_json,reference_date',
@@ -172,6 +193,18 @@ async function fetchDistrictResidentPopulation(gu) {
   });
 
   const summary = rowsToPopulationSummary(rows, 'supabase_resident_population');
+  if (!summary) return null;
+
+  const dongRows = await supabaseFetch('dong_metrics', {
+    select: 'dong,metric_value,metric_json,reference_date',
+    gu: `eq.${gu}`,
+    metric_key: 'eq.resident_population_age_gender',
+    population_mode: 'eq.resident',
+    reference_date: summary.referenceDate ? `eq.${summary.referenceDate}` : undefined,
+    order: 'reference_date.desc.nullslast,fetched_at.desc'
+  }).catch(() => null);
+
+  summary.dongBreakdown = rowsToDongPopulationBreakdown(dongRows, 'supabase_resident_population');
   return summary;
 }
 

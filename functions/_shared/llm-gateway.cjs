@@ -218,6 +218,39 @@ function districtInsightResponseFormat() {
   };
 }
 
+function districtReportNarrativeResponseFormat() {
+  const narrativeProperties = Object.fromEntries([
+    'executiveSummary',
+    'population',
+    'culture',
+    'education',
+    'socialSafety',
+    'libraryImplications',
+    'cautions'
+  ].map(key => [key, { type: 'string' }]));
+
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: 'libscope_district_report_narrative_output',
+      strict: true,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['reportNarrative'],
+        properties: {
+          reportNarrative: {
+            type: 'object',
+            additionalProperties: false,
+            required: Object.keys(narrativeProperties),
+            properties: narrativeProperties
+          }
+        }
+      }
+    }
+  };
+}
+
 function sentenceCount(text) {
   return String(text || '')
     .split(/[.!?。]|다\.|함\.|됨\.|필요\.|가능\./)
@@ -560,11 +593,17 @@ function buildDistrictScreenPrompt({ basePayload = {} } = {}) {
 }
 const COMMON_DISTRICT_PROMPT_RULES = [
   '역할: 서울시 공공도서관 정책·서비스 판단을 돕는 분석관.',
-  '문체: 존대 없이 보고서형 명사형 어미를 우선 사용.',
+  '문체: 존대 없이 짧은 불릿형 문장과 명사형 종결만 사용.',
+  '문장 종결은 “필요”, “권고”, “우선”, “분리”, “재배치”, “편성”, “설계”, “운영”, “제공”, “연계”, “배정”처럼 판단·행동을 나타내는 명사형으로 통일.',
+  '“~합니다”, “~됩니다”, “~해야 함”, “~할 수 있음”, “~으로 판단됨” 같은 서술형·장문 종결 금지.',
+  '한 항목에는 하나의 판단만 작성하고 접속어로 두 판단을 이어 붙이지 않음.',
   '입력에 없는 숫자, 순위, 추세, 평균, 격차, 인과관계를 생성하지 않음.',
   'analysisSignals의 계산 결과와 evidenceMatrix의 근거를 우선 신뢰하며 모델이 새 계산을 만들지 않음.',
+  '근거 선택 우선순위: crossMetricTensions → notableSignals → serviceHypotheses → recommendedQuestions. 단, 상위 항목이 비어 있으면 다음 항목을 사용.',
+  'serviceHypotheses와 recommendedQuestions는 확정 사실이 아니라 운영데이터로 검증할 가설로만 다룸.',
   '장애, 외국인, 수급자 등 민감 지표를 지역 문제의 원인으로 단정하지 않음.',
-  '일반적인 개선 필요로 끝내지 말고 시간대, 채널, 공간, 협력기관, 프로그램 중 실행 단위를 제시.',
+  '일반적인 개선 필요로 끝내지 말고 대상, 시간대, 안내 채널, 공간 조건, 협력기관 역할, 프로그램 편성 중 입력이 뒷받침하는 실행 단위를 제시.',
+  '같은 판단, 근거, 실행 동사를 여러 문장에 반복하지 않고 각 문장에 하나의 핵심 판단만 둠.',
   '출력은 지정된 JSON 객체 하나만 반환하며 Markdown 코드블록을 사용하지 않음.'
 ];
 
@@ -614,16 +653,27 @@ function buildDistrictSectionPrompt({ basePayload = {}, sectionKeys = DISTRICT_S
     `생성 대상 섹션: ${normalizedSectionKeys.join(', ')}`,
     '',
     '섹션 출력 규칙:',
-    '- 각 summary는 1문장 판단문이며 수치 나열보다 판단축을 먼저 제시.',
-    '- 각 keyFindings는 2~4개이고 “근거: ... / 의미: ...” 구조를 사용.',
-    '- 근거에는 입력 수치·단위·조건을 유지하고 의미에는 도서관 운영 처방을 포함.',
-    '- cautions는 최대 2개이며 데이터 기준과 단정 금지 사항만 짧게 작성.',
+    '- 각 summary는 짧은 문장 2~3개로 구성하고 전체 정보량은 유지.',
+    '- summary의 각 문장은 30~60자이며 지표 관계 또는 운영 판단 하나만 포함.',
+    '- summary 문장마다 마침표로 분리하고 각각 명사형으로 종결.',
+    '- summary에는 대괄호를 사용하지 않고 문장 끝은 마침표 하나로 정리.',
+    '- 각 keyFindings는 2~3개이고 “근거: ... / 의미: ...” 구조를 정확히 사용.',
+    '- keyFindings의 근거와 의미는 각각 15~55자. 의미는 반드시 명사형 실행어로 종결.',
+    '- 근거에는 evidenceMatrix 또는 analysisSignals에 실제로 있는 수치·단위·비교 조건을 보존하고, 서로 다른 근거를 선택.',
+    '- 의미에는 근거와 직접 연결되는 대상·시간대·채널·공간·협력 역할 중 하나와 구체적 실행 동사를 포함.',
+    '- summary와 keyFindings 사이에 같은 사실이나 처방을 표현만 바꿔 반복하지 않음.',
+    '- cautions는 1~2개이며 기준시점, 데이터 계보, 운영데이터 부재처럼 해석 범위를 바꾸는 사항만 작성.',
     '- population은 주민등록인구와 생활인구의 기준 차이를 구분.',
-    '- culture는 시설 공급과 인구 대비 접근성, 서울시 문화향유 참고값을 구분.',
+    '- culture는 문화역량·향유 지표와 문화시설·공공도서관·진행 중 및 예정 행사를 함께 근거로 사용해 자치구 문화 접근성·참여·협력 자원을 통합 해석.',
+    '- culture에서 인구 10만 명당 값을 언급할 때는 summary와 keyFindings 모두 “인구 10만 명당” 조건을 생략하지 않음.',
+    '- culture keyFindings 3개는 ① 문화역량·접근성 수치 ② 실제 문화시설·공공도서관·행사 ③ 2024 서울시 문화향유 참고값을 각각 반드시 포함.',
+    '- culture summary는 ① 접근성 판단 ② 시설·행사 활용 ③ 향유·참여 연결을 각각 담은 정확히 3개의 짧은 문장으로 작성.',
+    '- culture의 의미에는 같은 항목 근거에 없는 학교·기관·대상을 새로 추가하지 않음.',
     '- education은 학교 조건과 population, culture 근거를 연결해 시간대·홍보·협력 역할을 처방.',
     '- socialSafety는 household, disability, foreign을 먼저 분리하고 population, culture 근거와 연결해 채널·공간·대면·언어 지원을 처방.',
     '- “확인·검토·점검 필요”, “접근성 강화 필요”, “맞춤형 서비스 필요” 같은 일반론 금지.',
     '- 고정값·갱신값·snapshot 같은 내부 통제 용어는 cautions 밖에 노출하지 않음.',
+    '- 반환 전 각 의미 문장이 근거에서 바로 도출되는지, 실행 주체가 도서관인지, 네 섹션의 처방이 서로 중복되지 않는지 자체 점검.',
     '',
     '반환 스키마:',
     JSON.stringify({ interpretations: sectionShape }),
@@ -649,8 +699,14 @@ function buildDistrictInsightPrompt({ basePayload = {}, interpretations = basePa
     '',
     '카드 출력 규칙:',
     '- cards는 정확히 “핵심 판단”, “주의 지점”, “실행 방향” 순서의 3개.',
-    '- 각 text는 1~2문장, 60~160자이며 지표 관계 → 분석 결과 → 도서관 운영 처방 구조.',
-    '- 각 bullets는 2~4개, 항목당 18~80자의 사용자용 실행 요약.',
+    '- 핵심 판단: crossMetricTensions 또는 가장 강한 notableSignals를 사용해 이 자치구만의 우선 판단축을 제시.',
+    '- 주의 지점: 핵심 판단과 다른 근거로 서비스 도달 공백, 자원 집중, 협력 조정 부담 중 하나를 구체화. 데이터 품질 경고문으로 대체하지 않음.',
+    '- 실행 방향: 앞선 두 판단을 종합하되 대상 1개 이상과 시간대·채널·공간·협력기관 중 실행 경계 1개 이상을 명시하고 우선순위를 제시.',
+    '- 각 text는 40~85자의 불릿형 1문장. 지표 관계 1개와 우선 판단 1개만 포함하고 명사형으로 종결.',
+    '- 각 bullets는 2~3개, 항목당 18~55자. text를 요약 반복하지 말고 실행 대상·조건·방법 중 하나만 보충.',
+    '- bullets는 실행 단위로 시작하고 분리, 재배치, 편성, 설계, 운영, 제공, 연계, 우선 배정 중 문맥에 맞는 명사형 실행어로 종결.',
+    '- 쉼표는 항목당 1개 이하, “~하고”, “~하며”, “~이므로”, “~인 반면”을 사용한 복문 금지.',
+    '- “우선 선점”, “우선 우선”, “분리 분리”처럼 의미가 겹치는 명사 연속 사용 금지.',
     '- 각 카드는 서로 다른 지표 조합을 사용하고 최소 2개 지표 축을 연결.',
     '- 각 text에는 인구·연령·생활인구, 복지·가구·장애·외국인, 문화·시설·무장애, 교육·학교, 도서관·협력 중 서로 다른 범주의 명사를 최소 2개 직접 포함.',
     '- text와 bullets에 숫자·단위·퍼센트·순위를 직접 표시하지 않음.',
@@ -659,8 +715,9 @@ function buildDistrictInsightPrompt({ basePayload = {}, interpretations = basePa
     '- 금지어 대신 분리, 재배치, 편성, 설계, 운영, 제공, 연계, 우선 배정을 사용.',
     '- “함께 보면”, 지표 3개 이상의 단순 열거, 어느 자치구에도 적용되는 범용 조언을 금지.',
     '- 내부 데이터 품질 지침은 cautions에만 작성하고 cards 또는 bullets에 노출하지 않음.',
-    '- 입력된 섹션 해석을 요약하되 문장을 그대로 복사하지 않음.',
-    '- JSON 반환 전 각 카드가 서로 다른 지표 범주 2개 이상과 실행 동사 1개 이상을 포함하고 금지어가 없는지 자체 점검.',
+    '- 입력된 섹션 해석의 근거 범위를 벗어나지 않으며 문장을 그대로 복사하지 않음.',
+    '- cautions는 1~2개. 카드 판단의 적용 범위를 실제로 제한하는 기준시점·데이터 계보·운영데이터 부재만 기록.',
+    '- JSON 반환 전 카드별 근거 조합·처방·동사가 서로 다른지, 각 카드가 지표 범주 2개 이상과 실행 동사 1개 이상을 포함하는지, 금지어와 근거 없는 사실이 없는지 자체 점검.',
     '',
     '반환 스키마:',
     JSON.stringify({
@@ -680,6 +737,58 @@ function buildDistrictInsightPrompt({ basePayload = {}, interpretations = basePa
       snapshotKey: basePayload.snapshotKey,
       analysisSignals: basePayload.analysisSignals,
       interpretations: buildPromptEvidenceMatrix(interpretations)
+    })
+  ].join('\n');
+}
+
+function buildDistrictReportNarrativePrompt({ basePayload = {}, interpretations = {}, insight = {} } = {}) {
+  return [
+    'LIBscope 자치구 웹 보고서의 각 장에 표시할 “핵심 해석” 본문만 생성한다.',
+    ...COMMON_DISTRICT_PROMPT_RULES,
+    '오른쪽의 근거와 시사점, 카드 불릿, 원자료는 수정하거나 새로 생성하지 않는다.',
+    '',
+    '핵심 해석 출력 규칙:',
+    '- 목적은 분석 과정이나 실행 방법의 설명이 아니라 해당 자치구가 주제별로 가진 두드러진 특성의 요약.',
+    '- “무엇을 분석함”, “어떻게 살펴야 함”, “추가 확인 필요” 같은 분석 절차·방법론·작업 내역 서술 금지.',
+    '- 대상·시간대·채널을 어떻게 운영할지 제안하기보다 구성의 집중, 상대적 강약, 접근 공백, 자원 간 연결성처럼 입력에서 드러나는 특이점을 우선.',
+    '- 비교 기준이 입력에 있을 때만 평균·자치구 기준과의 차이를 사용하고 입력에 없는 순위나 우열은 생성하지 않음.',
+    '- 입력된 섹션 해석과 종합 인사이트를 종합하되 입력 범위를 벗어난 사실·수치·인과관계를 추가하지 않음.',
+    '- 각 항목은 짧은 2~4문장으로 구성하고 첫 문장에 가장 두드러진 특성을 배치.',
+    '- 각 문장은 25~65자 내외로 작성하고 마침표로 분리.',
+    '- 수치 나열보다 지표 사이의 대비·집중·보완 관계와 지역적 특징이 드러나는 해석을 우선.',
+    '- executiveSummary는 인구·문화·교육·사회안전망을 관통하는 자치구의 대표 특성 2~3개를 3~4문장으로 통합.',
+    '- population은 연령·주민등록인구·생활인구 구성에서 특히 두드러지는 분포와 차이를 설명.',
+    '- culture는 문화향유 수준, 시설·도서관 접근성, 행사 자원의 결합에서 드러나는 강점과 공백을 설명.',
+    '- education은 학교급 구성과 공간 분포, 도서관 자원과의 인접·연결 특성을 설명.',
+    '- socialSafety는 가구·장애·외국인 구성 중 집중된 유형과 접근 조건의 차이를 설명하되 대상자를 문제 원인으로 단정하지 않음.',
+    '- libraryImplications는 앞선 특이점이 도서관 서비스에 갖는 의미만 요약하고 구체적 수행 절차는 작성하지 않음.',
+    '- cautions는 기준시점·자료 계보·운영데이터 부재처럼 해석 범위를 제한하는 내용만 작성.',
+    '- 단독 근거 아님, 원인 단정 금지, 개인 수요 추론 금지, 기준 차이, 정책 우열 금지 같은 안전·방법론 문장은 해당 주제 본문에 쓰지 않고 cautions에만 작성.',
+    '- socialSafety 본문에는 안전 규칙을 설명하지 말고 실제 입력에서 드러나는 가구·장애·외국인 구성과 접근 조건의 특이점만 작성.',
+    '- “확인 필요”, “검토 필요”, “강화 필요” 같은 일반론과 “분석했다”, “살펴봤다” 같은 작업 보고형 표현 금지.',
+    '- 내부 생성·캐시·프롬프트 용어 금지.',
+    '- 반환값은 reportNarrative 객체 하나를 포함한 JSON 객체만 사용.',
+    '',
+    '반환 스키마:',
+    JSON.stringify({
+      reportNarrative: {
+        executiveSummary: 'string',
+        population: 'string',
+        culture: 'string',
+        education: 'string',
+        socialSafety: 'string',
+        libraryImplications: 'string',
+        cautions: 'string'
+      }
+    }),
+    '',
+    '입력:',
+    JSON.stringify({
+      gu: basePayload.insight?.title,
+      snapshotKey: basePayload.snapshotKey,
+      analysisSignals: basePayload.analysisSignals,
+      interpretations: buildPromptEvidenceMatrix(interpretations),
+      insight
     })
   ].join('\n');
 }
@@ -948,6 +1057,57 @@ async function generateDistrictScreenText({
   return output;
 }
 
+async function generateDistrictReportNarrative({
+  basePayload,
+  interpretations,
+  insight,
+  route = 'direct',
+  provider = 'openai',
+  model = 'gpt-5.6-terra'
+}) {
+  const output = await callProviderJson({
+    route,
+    provider,
+    model,
+    prompt: buildDistrictReportNarrativePrompt({ basePayload, interpretations, insight }),
+    responseFormat: districtReportNarrativeResponseFormat()
+  });
+  return moveReportMethodCautions(output.reportNarrative || {});
+}
+
+function moveReportMethodCautions(reportNarrative = {}) {
+  const narrativeKeys = [
+    'executiveSummary',
+    'population',
+    'culture',
+    'education',
+    'socialSafety',
+    'libraryImplications'
+  ];
+  const cautionPattern = /단독 근거|원인.{0,8}단정|단정.{0,8}(금지|않)|개인.{0,8}(수요|추론)|추론.{0,8}(금지|않)|기준(?:연도|월|일| 차이)|산정 (?:목적|기준)|자료 계보|해석 범위|정책 우열|내부 (?:생성|캐시|프롬프트)/;
+  const movedCautions = [];
+  const sanitized = { ...reportNarrative };
+
+  narrativeKeys.forEach((key) => {
+    const sentences = String(reportNarrative[key] || '')
+      .trim()
+      .split(/(?<=[.!?])\s+/)
+      .filter(Boolean);
+    const kept = sentences.filter((sentence) => {
+      if (!cautionPattern.test(sentence)) return true;
+      movedCautions.push(sentence);
+      return false;
+    });
+    sanitized[key] = kept.join(' ');
+  });
+
+  sanitized.cautions = [
+    String(reportNarrative.cautions || '').trim(),
+    ...movedCautions
+  ].filter(Boolean).join(' ');
+  return sanitized;
+}
+
 module.exports = {
   getEnv,
   getGatewayReadiness,
@@ -958,6 +1118,9 @@ module.exports = {
   buildDistrictScreenPrompt,
   buildDistrictSectionPrompt,
   buildDistrictInsightPrompt,
+  buildDistrictReportNarrativePrompt,
+  moveReportMethodCautions,
   pickProviderAndModel,
-  generateDistrictScreenText
+  generateDistrictScreenText,
+  generateDistrictReportNarrative
 };

@@ -13,10 +13,48 @@ const FORCE_GENERATE = process.env.LLM_REFRESH_FORCE_GENERATE === '1';
 const INSIGHT_ONLY = process.env.LLM_REFRESH_INSIGHT_ONLY === '1';
 const QUALITY_RETRIES = process.env.LLM_REFRESH_QUALITY_RETRIES === '1' ? 1 : 0;
 const SOURCE_FORCE_REFRESH = process.env.LLM_SOURCE_FORCE_REFRESH === '1';
+const DISTRICT_CACHE_VERSION = process.env.LLM_DISTRICT_CACHE_VERSION || 'culture-events-kcisa-v7';
 const LIMIT = Math.max(0, parseInt(process.env.LLM_REFRESH_LIMIT || '0', 10));
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && next === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function getCultureMetrics(gu) {
+  const filePath = path.resolve(process.cwd(), 'district_culture_enjoyment_metrics.csv');
+  const lines = fs.readFileSync(filePath, 'utf-8').trim().split(/\r?\n/);
+  const headers = parseCsvLine(lines[0]).map(header => header.replace(/^\uFEFF/, ''));
+
+  for (const line of lines.slice(1)) {
+    const values = parseCsvLine(line);
+    const row = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']));
+    if (row.gu === gu) return row;
+  }
+  return {};
 }
 
 function getDistricts() {
@@ -39,6 +77,7 @@ async function fetchDistrictData(gu) {
     params: {
       type: 'district',
       gu,
+      cacheVersion: DISTRICT_CACHE_VERSION,
       forceRefresh: SOURCE_FORCE_REFRESH ? '1' : '0',
       includeCacheMeta: '0'
     },
@@ -49,6 +88,7 @@ async function fetchDistrictData(gu) {
 
 async function refreshDistrictLlmCache(gu) {
   const districtData = await fetchDistrictData(gu);
+  const cultureMetrics = getCultureMetrics(gu);
   const response = await axios.post(LLM_HARNESS_BASE_URL, {
     type: 'district_screen',
     provider: PROVIDER,
@@ -57,7 +97,7 @@ async function refreshDistrictLlmCache(gu) {
     regenerateInsightOnly: INSIGHT_ONLY,
     qualityRetries: QUALITY_RETRIES,
     districtData,
-    cultureMetrics: {}
+    cultureMetrics
   }, {
     timeout: 120000
   });

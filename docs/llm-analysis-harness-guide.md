@@ -1,6 +1,6 @@
 # LIBscope 분석 하네스 가이드
 
-기준일: 2026-08-15
+기준일: 2026-08-28
 관리 코드:
 
 - `functions/_shared/analysis-signals.cjs`
@@ -87,10 +87,12 @@ AI는 다음 순서로만 판단한다.
 
 화면용 AI 생성은 하나의 통합 요청이 아니라 다음 두 계약을 순서대로 실행한다.
 
-1. `district-section-interpretation-v0.1`: 선택된 `population`, `culture`, `education`, `socialSafety` 해석만 생성.
-2. `district-summary-insight-v0.2`: 저장되었거나 방금 생성된 섹션 해석을 입력으로 받아 상단 종합 카드 3개만 생성.
+1. `district-section-interpretation-v0.2`: 선택된 `population`, `culture`, `education`, `socialSafety` 해석만 생성.
+2. `district-summary-insight-v0.3`: 저장되었거나 방금 생성된 섹션 해석을 입력으로 받아 상단 종합 카드 3개만 생성.
 
-공통 문체·안전·근거 규칙은 두 프롬프트가 공유한다. 섹션별 재생성은 선택 섹션만 모델에 요청하며, 종합 카드는 갱신된 섹션 결과를 반영해 다시 합성한다. 보고서 본문과 카드 품질 복구는 화면 생성 계약에 합치지 않는다.
+공통 문체·안전·근거 규칙은 두 프롬프트가 공유한다. 근거는 `crossMetricTensions`, `notableSignals`, `serviceHypotheses`, `recommendedQuestions` 순으로 선택하며 가설과 질문을 확정 사실로 승격하지 않는다. 섹션 해석은 근거와 실행 단위를 직접 연결하고, 종합 카드는 카드별 역할·근거 조합·처방이 중복되지 않게 합성한다. 보고서 본문과 카드 품질 복구는 화면 생성 계약에 합치지 않는다.
+
+화면에서는 캐시된 결과만 조회한다. 사용자 직접 AI 생성과 섹션별 재생성 조작은 노출하지 않으며, 생성·재생성은 수동 운영 갱신 경로에서만 수행한다.
 
 캐시 버전은 다음처럼 구분한다.
 

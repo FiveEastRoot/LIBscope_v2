@@ -48,8 +48,10 @@ const axios = {
 
 const INSIGHT_CACHE_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 월간 갱신 사이 캐시 유지
 const INSIGHT_CACHE_FILE = '/tmp/insight-api-cache.json';
-const INSIGHT_CACHE_VERSION = 'v6';
+const INSIGHT_CACHE_VERSION = 'v8';
 const memoryCache = new Map();
+let livingPopulationAvailableDate = null;
+let livingPopulationAvailabilityChecked = false;
 
 function buildCacheKey(type, identifiers = {}) {
   const ordered = Object.keys(identifiers)
@@ -375,6 +377,151 @@ function formatYYYYMMDD(date) {
   return seoulTime.toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+function formatCultureEventDate(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+  return digits.length === 8
+    ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+    : '';
+}
+
+function decodeXmlText(value) {
+  return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(parseInt(code, 10)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+function readXmlTag(xml, tagName) {
+  const match = String(xml || '').match(new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
+  return decodeXmlText(match?.[1] || '');
+}
+
+function parseKcisaCultureEvents(xml, gu, today) {
+  if (readXmlTag(xml, 'resultCode') !== '00') {
+    throw new Error(readXmlTag(xml, 'resultMsg') || 'KCISA 문화정보 API 오류');
+  }
+
+  return [...String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/gi)]
+    .map(([, itemXml]) => {
+      const startDate = formatCultureEventDate(readXmlTag(itemXml, 'startDate'));
+      const endDate = formatCultureEventDate(readXmlTag(itemXml, 'endDate')) || startDate;
+      const lat = parseCoordinate(readXmlTag(itemXml, 'gpsY'));
+      const lng = parseCoordinate(readXmlTag(itemXml, 'gpsX'));
+      return {
+        id: readXmlTag(itemXml, 'seq'),
+        title: readXmlTag(itemXml, 'title'),
+        category: readXmlTag(itemXml, 'realmName') || readXmlTag(itemXml, 'serviceName') || '문화행사',
+        place: readXmlTag(itemXml, 'place') || '장소 확인 필요',
+        startDate,
+        endDate,
+        status: startDate && startDate > today ? 'upcoming' : 'ongoing',
+        target: '',
+        fee: '',
+        isFree: '',
+        organizer: '',
+        link: '',
+        thumbnail: readXmlTag(itemXml, 'thumbnail'),
+        lat,
+        lng,
+        sigungu: readXmlTag(itemXml, 'sigungu'),
+        source: 'kcisa',
+        sourceLabel: '한국문화정보원'
+      };
+    })
+    .filter(eventItem => eventItem.title && (!eventItem.endDate || eventItem.endDate >= today))
+    .filter(eventItem => eventItem.sigungu === gu)
+    .map(eventItem => {
+      const normalized = { ...eventItem };
+      delete normalized.sigungu;
+      return normalized;
+    });
+}
+
+function normalizeSeoulCultureEvents(events, gu, today) {
+  return events
+    .filter(eventItem => eventItem.GUNAME === gu)
+    .map(eventItem => {
+      const dateMatches = String(eventItem.DATE || '').match(/\d{4}-\d{2}-\d{2}/g) || [];
+      const startDate = formatCultureEventDate(eventItem.STRTDATE) || dateMatches[0] || '';
+      const endDate = formatCultureEventDate(eventItem.END_DATE) || dateMatches[1] || startDate;
+      return {
+        title: String(eventItem.TITLE || '').trim(),
+        category: String(eventItem.CODENAME || '문화행사').trim(),
+        place: String(eventItem.PLACE || '장소 확인 필요').trim(),
+        startDate,
+        endDate,
+        status: startDate && startDate > today ? 'upcoming' : 'ongoing',
+        target: String(eventItem.USE_TRGT || '').trim(),
+        fee: String(eventItem.USE_FEE || '').trim(),
+        isFree: String(eventItem.IS_FREE || '').trim(),
+        organizer: String(eventItem.ORG_NAME || '').trim(),
+        link: String(eventItem.ORG_LINK || eventItem.HMPG_ADDR || '').trim(),
+        thumbnail: String(eventItem.MAIN_IMG || '').trim(),
+        lat: parseCoordinate(eventItem.LAT),
+        lng: parseCoordinate(eventItem.LOT),
+        source: 'seoul',
+        sourceLabel: '서울 열린데이터광장'
+      };
+    })
+    .filter(eventItem => eventItem.title && (!eventItem.endDate || eventItem.endDate >= today));
+}
+
+async function fetchKcisaCultureEvents({ apiKey, gu, today }) {
+  if (!apiKey) return [];
+  const horizon = new Date();
+  horizon.setFullYear(horizon.getFullYear() + 1);
+  const response = await axios.get('https://apis.data.go.kr/B553457/cultureinfo/area2', {
+    timeout: 5000,
+    params: {
+      serviceKey: apiKey,
+      PageNo: 1,
+      numOfrows: 1000,
+      sido: '서울',
+      sigungu: gu,
+      from: formatYYYYMMDD(new Date()),
+      to: formatYYYYMMDD(horizon),
+      sortStdr: 1
+    }
+  });
+  return parseKcisaCultureEvents(response.data, gu, today);
+}
+
+function cultureEventKey(eventItem) {
+  const normalize = value => String(value || '')
+    .normalize('NFC')
+    .toLocaleLowerCase('ko')
+    .replace(/[^0-9a-z가-힣]/g, '');
+  return `${normalize(eventItem.title)}|${normalize(eventItem.place)}|${eventItem.startDate || ''}`;
+}
+
+function mergeCultureEvents(primaryEvents, supplementEvents) {
+  const merged = new Map(primaryEvents.map(eventItem => [cultureEventKey(eventItem), eventItem]));
+  supplementEvents.forEach(eventItem => {
+    const key = cultureEventKey(eventItem);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, eventItem);
+      return;
+    }
+    merged.set(key, {
+      ...eventItem,
+      ...existing,
+      thumbnail: existing.thumbnail || eventItem.thumbnail,
+      lat: existing.lat ?? eventItem.lat,
+      lng: existing.lng ?? eventItem.lng,
+      source: 'seoul+kcisa',
+      sourceLabel: '서울시·한국문화정보원'
+    });
+  });
+  return [...merged.values()];
+}
+
 function dateLagDays(requestedDate, referenceDate) {
   const parse = value => Date.UTC(
     Number(String(value).slice(0, 4)),
@@ -406,7 +553,8 @@ function createEmptyPopulationSummary() {
     freshnessStatus: 'unavailable',
     isDelayed: false,
     matchedDongs: [],
-    missingDongs: []
+    missingDongs: [],
+    dongBreakdown: []
   };
 }
 
@@ -501,7 +649,7 @@ function normalizeFiveYearAgeDistribution(ageDistribution = {}) {
     const value = parsePopulationNumber(rawValue);
     if (!value || label === '총인구') return;
 
-    const range = String(label).match(/^(\d{1,3})-(\d{1,3})세$/);
+    const range = String(label).match(/^(\d{1,3})[-~](\d{1,3})세$/);
     if (range) {
       const start = Number(range[1]);
       const end = Number(range[2]);
@@ -616,21 +764,30 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
   const targetCodeList = [...targetCodes];
   const probeCode = targetCodeList[0];
   const apiName = 'SPOP_LOCAL_RESD_DONG';
-  let availableDate = null;
+  let availableDate = livingPopulationAvailableDate;
 
-  for (const referenceDate of candidateDates) {
-    try {
-      const url = `http://openapi.seoul.go.kr:8088/${apiKey}/json/${apiName}/1/1/${referenceDate}/00/${probeCode}`;
-      const probeResponse = await axios.get(url, { timeout: 1400 }).catch(() => null);
-      const probeRows = probeResponse ? pickApiRows(apiName, probeResponse) : [];
-      if (probeRows.length > 0) {
-        availableDate = referenceDate;
+  // 공개 시점이 지연되는 생활인구 API를 날짜별로 직렬 조회하면 콜드 스타트가
+  // 수십 초를 넘는다. 최신 날짜 순서를 유지한 채 30일 단위로 병렬 탐색한다.
+  if (!livingPopulationAvailabilityChecked) {
+    const probeBatchSize = 30;
+    for (let offset = 0; offset < candidateDates.length; offset += probeBatchSize) {
+      const batch = candidateDates.slice(offset, offset + probeBatchSize);
+      const results = await Promise.all(batch.map(async (referenceDate) => {
+        const url = `http://openapi.seoul.go.kr:8088/${apiKey}/json/${apiName}/1/1/${referenceDate}/00/${probeCode}`;
+        const probeResponse = await axios.get(url, { timeout: 1400 }).catch(() => null);
+        const probeRows = probeResponse ? pickApiRows(apiName, probeResponse) : [];
+        return probeRows.length > 0 ? referenceDate : null;
+      }));
+      availableDate = results.find(Boolean) || null;
+      if (availableDate) {
+        livingPopulationAvailableDate = availableDate;
         break;
       }
-    } catch (err) {
-      // 후보 API 호출 실패 시 다음 날짜로 전환
     }
-    console.warn(`[PopulationAPI] ${referenceDate} 생활인구 API 미스`);
+    livingPopulationAvailabilityChecked = true;
+    if (!availableDate) {
+      console.warn('[PopulationAPI] 최근 120일 내 생활인구 제공일을 찾지 못했습니다.');
+    }
   }
 
   if (availableDate) {
@@ -660,7 +817,20 @@ async function fetchLiveDongPopulation({ apiKey, gu, dongs, dongAreas = [] }) {
       }
       const beforeCount = attemptSummary.matchedDongs.length;
       rowToPopulationSummary(attemptSummary, row, dong);
-      if (attemptSummary.matchedDongs.length > beforeCount) matched = true;
+      if (attemptSummary.matchedDongs.length > beforeCount) {
+        matched = true;
+        const dongSummary = createEmptyPopulationSummary();
+        dongSummary.source = apiName;
+        dongSummary.referenceDate = availableDate;
+        rowToPopulationSummary(dongSummary, row, dong);
+        finalizePopulationSummary(dongSummary);
+        attemptSummary.dongBreakdown.push({
+          dong,
+          total: dongSummary.total,
+          ageDistribution: dongSummary.ageDistribution,
+          referenceDate: availableDate
+        });
+      }
     });
 
     if (matched) {
@@ -707,7 +877,36 @@ function fetchResidentDistrictPopulationFromCsv(gu) {
   });
 
   finalizePopulationSummary(summary);
+  summary.dongBreakdown = fetchResidentDongBreakdownFromCsv(gu);
   return summary;
+}
+
+function fetchResidentDongBreakdownFromCsv(gu) {
+  const ageRows = parseCSV('2_population_and_senior.csv')
+    .filter(row => row['자치구'] === gu && row['행정동'] && row['행정동'] !== '소계');
+  const genderRows = parseCSV('3_gender.csv').filter(row => row['자치구'] === gu);
+  const genderByDong = new Map(genderRows.map(row => [row['행정동'], row]));
+
+  return ageRows.map(row => {
+    const ageDistribution = {};
+    Object.entries(row).forEach(([key, value]) => {
+      if (['자치구', '행정동', '고령자', '학령인구'].includes(key)) return;
+      const count = parsePopulationNumber(value);
+      if (count > 0) ageDistribution[key] = count;
+    });
+
+    const normalizedAgeDistribution = normalizeFiveYearAgeDistribution(ageDistribution);
+    const gender = genderByDong.get(row['행정동']) || {};
+    const genderTotal = parsePopulationNumber(gender['남자']) + parsePopulationNumber(gender['여자']);
+    const ageTotal = Object.values(normalizedAgeDistribution).reduce((sum, value) => sum + Number(value || 0), 0);
+
+    return {
+      dong: row['행정동'],
+      total: Math.round(genderTotal || ageTotal),
+      ageDistribution: normalizedAgeDistribution,
+      referenceDate: null
+    };
+  });
 }
 
 async function fetchLivingDistrictPopulation({ apiKey, gu }) {
@@ -779,6 +978,7 @@ exports.handler = async (event, context) => {
   const { type, gu, library } = queryParams;
   const SEOUL_API_KEY = process.env.SEOUL_API_KEY || '';
   const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY || '';
+  const KCISA_CULTURE_API_KEY = process.env.KCISA_CULTURE_API_KEY || '';
   const forceRefresh = queryParams.forceRefresh === '1';
   const includeCacheMeta = queryParams.includeCacheMeta === '1';
   const cacheVersion = queryParams.cacheVersion || 'default';
@@ -851,6 +1051,50 @@ exports.handler = async (event, context) => {
       };
     }
 
+    // ------------------ 주소 좌표 변환 API ------------------
+    if (type === 'geocode') {
+      const addressQuery = String(queryParams.address || '').trim();
+      if (!addressQuery) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'address 파라미터가 필요합니다.' }) };
+      }
+      if (addressQuery.length > 160) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: '주소는 160자 이내로 입력해 주세요.' }) };
+      }
+      if (!KAKAO_REST_API_KEY) {
+        return { statusCode: 503, headers, body: JSON.stringify({ error: '서버의 주소 검색 설정을 확인해 주세요.' }) };
+      }
+
+      const response = await axios.get('https://dapi.kakao.com/v2/local/search/address.json', {
+        headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` },
+        params: { query: addressQuery },
+        timeout: 4000
+      });
+      const match = response.data?.documents?.[0];
+      if (!match) {
+        return { statusCode: 404, headers, body: JSON.stringify({ error: '주소를 찾을 수 없습니다. 도로명 또는 지번 주소를 확인하세요.' }) };
+      }
+
+      const addressInfo = match.road_address || match.address;
+      const region = addressInfo?.region_1depth_name?.trim();
+      const matchedGu = addressInfo?.region_2depth_name?.trim();
+      const lat = Number.parseFloat(match.y);
+      const lng = Number.parseFloat(match.x);
+      if (!['서울', '서울특별시'].includes(region) || !matchedGu || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: '서울시 25개 자치구에 해당하는 주소만 분석할 수 있습니다.' }) };
+      }
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          gu: matchedGu,
+          address: match.road_address?.address_name || match.address?.address_name || addressQuery,
+          lat,
+          lng
+        })
+      };
+    }
+
     // ------------------ 1. 자치구별 대시보드 API ------------------
     if (type === 'district') {
       if (!gu) {
@@ -877,7 +1121,7 @@ exports.handler = async (event, context) => {
       }
 
       // 1) 자치구 인구 통계: 주민등록인구 기본 + 생활인구 병행 사전 로드
-      const [residentPopulation, livingPopulation] = await Promise.all([
+      const populationPromise = Promise.all([
         withSupabaseFallback(
           `district resident population ${gu}`,
           () => supabaseMetrics.fetchDistrictResidentPopulation(gu),
@@ -885,12 +1129,6 @@ exports.handler = async (event, context) => {
         ),
         fetchLivingDistrictPopulation({ apiKey: SEOUL_API_KEY, gu })
       ]);
-      const populationModes = buildPopulationModes({
-        resident: residentPopulation,
-        living: livingPopulation
-      });
-      const defaultPopulation = getDefaultPopulation(populationModes);
-
       // 2) 자치구 종합 지표 (수급률, 다문화, 장애유형, 1인가구 등)
       // district_data_combined.csv 로드
       const combinedCSV = parseCSV('district_data_combined.csv');
@@ -935,9 +1173,9 @@ exports.handler = async (event, context) => {
 
       // 3) 실시간 초·중·고교 인프라 API 연동 (neisSchoolInfo) + 대학교 API 연동 (SebcCollegeInfoKor)
       let schoolStats = {
-        elementary: 0,
-        middle: 0,
-        high: 0,
+        elementary: parseInt(guCombined['초등학교'] || 0),
+        middle: parseInt(guCombined['중학교'] || 0),
+        high: parseInt(guCombined['고등학교'] || 0),
         university: 0
       };
       const schoolDetails = {
@@ -955,7 +1193,14 @@ exports.handler = async (event, context) => {
           if (!name && !address) return;
           const key = `${name}|${address}`;
           if (!unique.has(key)) {
-            unique.set(key, { name, address, category: school.category || category });
+            const lat = Number.parseFloat(school.lat);
+            const lng = Number.parseFloat(school.lng);
+            unique.set(key, {
+              name,
+              address,
+              category: school.category || category,
+              ...(Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : {})
+            });
           }
         });
         return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
@@ -986,7 +1231,9 @@ exports.handler = async (event, context) => {
                 name: place.place_name,
                 address: place.road_address_name || place.address_name,
                 category,
-                sourceCategory: place.category_name || ''
+                sourceCategory: place.category_name || '',
+                lat: place.y,
+                lng: place.x
               }))
               .filter((school) => {
                 if (!school.name || !school.address || !school.address.includes(gu)) return false;
@@ -1004,7 +1251,71 @@ exports.handler = async (event, context) => {
           return [];
         }
       };
-      let isLiveSchools = false;
+      const classifyCultureFacility = (place = {}) => {
+        const text = `${place.place_name || ''} ${place.category_name || ''}`;
+        if (/(박물관|기념관)/.test(text)) return { typeKey: 'museum', typeLabel: '박물관·기념관' };
+        if (/(미술관|갤러리|전시)/.test(text)) return { typeKey: 'exhibition', typeLabel: '미술관·전시' };
+        if (/(공연|극장|콘서트|아트홀|예술의전당)/.test(text)) return { typeKey: 'performance', typeLabel: '공연장·극장' };
+        if (/(문화센터|문화원|문화회관|문화예술)/.test(text)) return { typeKey: 'community', typeLabel: '문화센터·문화회관' };
+        return { typeKey: 'other', typeLabel: '기타 문화시설' };
+      };
+      const fetchKakaoCultureFacilities = async () => {
+        if (!KAKAO_REST_API_KEY) {
+          return { facilities: [], sourceStatus: 'missing_key' };
+        }
+        try {
+          const queries = ['문화시설', '박물관', '미술관', '공연장', '문화센터', '문화회관'];
+          const responses = await Promise.all(queries.flatMap(query => [1, 2, 3].map(page => (
+            axios.get('https://dapi.kakao.com/v2/local/search/keyword.json', {
+              headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` },
+              params: {
+                query: `${gu} ${query}`,
+                category_group_code: 'CT1',
+                size: 15,
+                page,
+                sort: 'accuracy'
+              },
+              timeout: 3000
+            }).catch(err => {
+              console.warn(`[KakaoCultureFacilityAPI] ${gu} ${query} ${page}페이지 검색 실패:`, err.message);
+              return null;
+            })
+          ))));
+          const facilityMap = new Map();
+          responses.flatMap(response => response?.data?.documents || []).forEach(place => {
+            const address = place.road_address_name || place.address_name || '';
+            const lat = Number.parseFloat(place.y);
+            const lng = Number.parseFloat(place.x);
+            if (!address.includes(gu) || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            const classification = classifyCultureFacility(place);
+            const key = place.id || `${place.place_name}|${address}`;
+            facilityMap.set(key, {
+              id: String(place.id || key),
+              name: place.place_name || '문화시설',
+              address,
+              lat,
+              lng,
+              phone: place.phone || '',
+              placeUrl: place.place_url || '',
+              categoryName: place.category_name || '',
+              ...classification
+            });
+          });
+          return {
+            facilities: [...facilityMap.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+            sourceStatus: 'kakao_keyword_search'
+          };
+        } catch (err) {
+          console.warn(`[KakaoCultureFacilityAPI] ${gu} 검색 실패:`, err.message);
+          return { facilities: [], sourceStatus: 'request_failed' };
+        }
+      };
+      const schoolKeys = ['elementary', 'middle', 'high', 'university'];
+      const schoolCategories = ['초등학교', '중학교', '고등학교', '대학교'];
+      const schoolLocationCandidatesPromise = Promise.all(
+        schoolCategories.map(category => fetchKakaoSchoolDetails(category, category))
+      );
+      const cultureFacilityPromise = fetchKakaoCultureFacilities();
       try {
         // 서울시 전체 학교 수는 약 3,960여 개이므로, 1~4000 범위를 1000개 단위로 4번 병렬 호출하여 전체 취합
         const ranges = [
@@ -1053,28 +1364,28 @@ exports.handler = async (event, context) => {
               category: scClass || '학교'
             };
             if (scClass === '초등학교') {
-              schoolStats.elementary++;
               schoolDetails.elementary.push(school);
             } else if (scClass === '중학교') {
-              schoolStats.middle++;
               schoolDetails.middle.push(school);
             } else if (scClass === '고등학교') {
-              schoolStats.high++;
               schoolDetails.high.push(school);
             }
           });
-          isLiveSchools = true;
         }
       } catch (err) {
         console.warn('[SchoolAPI] neisSchoolInfo API 호출 처리 중 예외 발생, CSV Fallback 진행:', err.message);
       }
 
-      // API 실패 시 CSV 데이터 활용
-      if (!isLiveSchools) {
-        schoolStats.elementary = parseInt(guCombined['초등학교'] || 0);
-        schoolStats.middle = parseInt(guCombined['중학교'] || 0);
-        schoolStats.high = parseInt(guCombined['고등학교'] || 0);
-      }
+      // 학교 수는 API의 부분 응답에 흔들리지 않도록 내재화된 공식 집계값을 사용한다.
+
+      const univFallback = {
+        "강남구": 1, "강동구": 1, "강북구": 1, "강서구": 1, "관악구": 1,
+        "광진구": 3, "구로구": 3, "금천구": 0, "노원구": 6, "도봉구": 1,
+        "동대문구": 4, "동작구": 3, "마포구": 2, "서대문구": 6, "서초구": 1,
+        "성동구": 2, "성북구": 6, "송파구": 1, "양천구": 0, "영등포구": 0,
+        "용산구": 1, "은평구": 1, "종로구": 8, "중구": 3, "중랑구": 1
+      };
+      schoolStats.university = univFallback[gu] || 0;
 
       // 대학교(대학/전문대) API 호출 추가
       try {
@@ -1086,7 +1397,6 @@ exports.handler = async (event, context) => {
             const rowAddr = r.ADD_KOR || '';
             return rowGu === gu || rowAddr.includes(gu);
           });
-          schoolStats.university = univRows.length;
           schoolDetails.university = univRows.map(r => ({
             name: r.H_KOR_NAME || r.SCHUL_NM || r.NAME_KOR || r.NAME || '',
             address: r.ADD_KOR || r.ADDRESS || '',
@@ -1096,39 +1406,21 @@ exports.handler = async (event, context) => {
         }
       } catch (err) {
         console.warn('[SchoolAPI] 대학교 API 호출 실패, 하드코딩 Fallback 진행:', err.message);
-        const univFallback = {
-          "강남구": 0, "강동구": 1, "강북구": 1, "강서구": 1, "관악구": 1,
-          "광진구": 3, "구로구": 3, "금천구": 0, "노원구": 6, "도봉구": 1,
-          "동대문구": 4, "동작구": 3, "마포구": 2, "서대문구": 6, "서초구": 1,
-          "성동구": 2, "성북구": 6, "송파구": 1, "양천구": 0, "영등포구": 0,
-          "용산구": 1, "은평구": 1, "종로구": 8, "중구": 3, "중랑구": 1
-        };
-        schoolStats.university = univFallback[gu] || 0;
       }
 
-      const schoolDetailFallbacks = await Promise.all([
-        schoolDetails.elementary.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('초등학교', '초등학교'),
-        schoolDetails.middle.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('중학교', '중학교'),
-        schoolDetails.high.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('고등학교', '고등학교'),
-        schoolDetails.university.length > 0 ? Promise.resolve([]) : fetchKakaoSchoolDetails('대학교', '대학교')
-      ]);
-      const schoolKeys = ['elementary', 'middle', 'high', 'university'];
+      const schoolLocationCandidates = await schoolLocationCandidatesPromise;
       schoolKeys.forEach((key, index) => {
-        if (schoolDetails[key].length === 0 && schoolDetailFallbacks[index].length > 0) {
-          schoolDetails[key] = schoolDetailFallbacks[index];
-        } else {
-          schoolDetails[key] = normalizeSchoolDetails(schoolDetails[key], {
-            elementary: '초등학교',
-            middle: '중학교',
-            high: '고등학교',
-            university: '대학교'
-          }[key]);
-        }
-        if (schoolDetails[key].length > schoolStats[key]) {
-          schoolStats[key] = schoolDetails[key].length;
-        }
+        const candidates = schoolLocationCandidates[index];
+        const candidateByName = new Map(candidates.map(school => [school.name, school]));
+        const normalizedDetails = normalizeSchoolDetails(schoolDetails[key], schoolCategories[index]);
+        schoolDetails[key] = (normalizedDetails.length > 0 ? normalizedDetails : candidates).map(school => {
+          const location = candidateByName.get(school.name);
+          return location ? { ...school, lat: location.lat, lng: location.lng } : school;
+        });
       });
       console.log(`[SchoolAPI] 최종 교육기관 통계 (${gu}):`, schoolStats);
+
+      const cultureFacilityResult = await cultureFacilityPromise;
 
       // 4) 실시간 공공도서관 현황 API 연동 (SeoulPublicLibraryInfo) 및 자치구 도서관 수 집계
       let publicLibraryCount = 0;
@@ -1155,20 +1447,40 @@ exports.handler = async (event, context) => {
         }
       }
 
-      // 5) 서울시 문화행사 API 연동 (당월 행사 건수 및 목록 수집)
-      let cultureEventsCount = 0;
+      // 5) 서울시 문화행사를 기본으로 사용하고 한국문화정보원 데이터를 보강한다.
+      const today = formatYYYYMMDD(new Date()).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+      const currentMonth = today.slice(0, 7);
+      let seoulCultureEvents = [];
       try {
-        const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-        const eventUrl = `http://openapi.seoul.go.kr:8088/${SEOUL_API_KEY}/json/culturalEventInfo/1/1000//%20/${currentMonth}`;
+        const eventUrl = `http://openapi.seoul.go.kr:8088/${SEOUL_API_KEY}/json/culturalEventInfo/1/1000/`;
         const eventRes = await axios.get(eventUrl, { timeout: 3000 });
         if (eventRes.data && eventRes.data.culturalEventInfo && eventRes.data.culturalEventInfo.row) {
-          const events = eventRes.data.culturalEventInfo.row;
-          const guEvents = events.filter(e => e.GUNAME === gu && e.DATE && e.DATE.startsWith(currentMonth));
-          cultureEventsCount = guEvents.length;
+          seoulCultureEvents = normalizeSeoulCultureEvents(eventRes.data.culturalEventInfo.row, gu, today);
         }
       } catch (err) {
-        console.warn('문화행사 API 호출 실패:', err.message);
+        console.warn('서울시 문화행사 API 호출 실패:', err.message);
       }
+
+      let kcisaCultureEvents = [];
+      if (KCISA_CULTURE_API_KEY) {
+        try {
+          kcisaCultureEvents = await fetchKcisaCultureEvents({ apiKey: KCISA_CULTURE_API_KEY, gu, today });
+        } catch (err) {
+          console.warn('한국문화정보원 문화정보 API 호출 실패:', err.message);
+        }
+      }
+
+      const cultureEvents = mergeCultureEvents(seoulCultureEvents, kcisaCultureEvents)
+        .sort((a, b) => {
+          if (a.status !== b.status) return a.status === 'ongoing' ? -1 : 1;
+          return String(a.startDate).localeCompare(String(b.startDate)) || a.title.localeCompare(b.title, 'ko');
+        })
+        .slice(0, 100);
+      const cultureEventsCount = cultureEvents.filter(eventItem => eventItem.startDate.startsWith(currentMonth)).length;
+      const cultureEventSources = {
+        seoul: cultureEvents.filter(eventItem => eventItem.source.includes('seoul')).length,
+        kcisa: cultureEvents.filter(eventItem => eventItem.source.includes('kcisa')).length
+      };
 
       // 최종 자치구 분석 데이터 반환
       const [supabaseWelfare, supabaseSocialIndicators] = await Promise.all([
@@ -1183,6 +1495,13 @@ exports.handler = async (event, context) => {
           () => null
         )
       ]);
+
+      const [residentPopulation, livingPopulation] = await populationPromise;
+      const populationModes = buildPopulationModes({
+        resident: residentPopulation,
+        living: livingPopulation
+      });
+      const defaultPopulation = getDefaultPopulation(populationModes);
 
       const responseData = {
         gu,
@@ -1220,7 +1539,11 @@ exports.handler = async (event, context) => {
           schools: schoolStats,
           schoolDetails,
           publicLibraryCount,
-          liveCultureEventsMonth: cultureEventsCount
+          liveCultureEventsMonth: cultureEventsCount,
+          cultureEvents,
+          cultureEventSources,
+          cultureFacilities: cultureFacilityResult.facilities,
+          cultureFacilitySourceStatus: cultureFacilityResult.sourceStatus
         }
       };
 
@@ -1436,77 +1759,44 @@ exports.handler = async (event, context) => {
         console.warn('카카오 Local API 검색 실패:', err.message);
       }
 
-      // 4) 서울시 문화행사 API 로드 및 도서관 반경 2km 이내 또는 자치구 내 행사 필터링
-      let nearbyEvents = [];
+      // 4) 서울시·한국문화정보원 문화행사 중 기준 위치 반경 2km 이내만 계산
+      const todayStr = formatYYYYMMDD(new Date()).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+      let seoulNearbyCandidates = [];
       try {
-        const todayStr = new Date().toISOString().slice(0, 10);
         const eventUrl = `http://openapi.seoul.go.kr:8088/${SEOUL_API_KEY}/json/culturalEventInfo/1/1000/`;
         const eventRes = await axios.get(eventUrl, { timeout: 3000 });
         if (eventRes.data && eventRes.data.culturalEventInfo && eventRes.data.culturalEventInfo.row) {
-          const events = eventRes.data.culturalEventInfo.row;
-          events.forEach(e => {
-            // 날짜 유효성 확인: 이미 종료된 행사는 제외
-            const endDate = e.END_DATE ? e.END_DATE.slice(0, 10) : '';
-            if (endDate && endDate < todayStr) {
-              return;
-            }
-
-            const lot = parseFloat(e.LOT);
-            const latVal = parseFloat(e.LAT);
-            
-            let isMatched = false;
-            let distance = 0;
-            let finalLat = null;
-            let finalLng = null;
-
-            // 1. 위경도가 유효한 경우 -> 반경 2km 이내 매칭
-            if (!isNaN(lot) && !isNaN(latVal) && lot > 120 && latVal > 30) {
-              const dist = haversine(targetInfo.lat, targetInfo.lng, latVal, lot);
-              if (dist <= 2000) {
-                isMatched = true;
-                distance = Math.round(dist);
-                finalLat = latVal;
-                finalLng = lot;
-              }
-            }
-
-            // 2. 자치구 기준 매칭 (좌표가 유실되었거나 먼 곳이어도 동일 구 내 행사는 목록에 리스트업)
-            if (!isLocationTarget && !isMatched && e.GUNAME && (e.GUNAME.includes(gu) || gu.includes(e.GUNAME))) {
-              isMatched = true;
-              distance = "자치구 내";
-              finalLat = null;
-              finalLng = null;
-            }
-
-            if (isMatched) {
-              nearbyEvents.push({
-                title: e.TITLE,
-                place: e.PLACE || '상세 장소 미정',
-                startDate: e.STRTDATE ? e.STRTDATE.slice(0, 10) : '',
-                endDate: endDate,
-                lat: finalLat,
-                lng: finalLng,
-                distance: distance
-              });
-            }
-          });
+          seoulNearbyCandidates = normalizeSeoulCultureEvents(eventRes.data.culturalEventInfo.row, gu, todayStr);
         }
-
-        // 거리순 정렬 (숫자형 거리 우선 정렬 후 자치구 내 텍스트 정렬)
-        nearbyEvents.sort((a, b) => {
-          if (typeof a.distance === 'number' && typeof b.distance === 'number') {
-            return a.distance - b.distance;
-          }
-          if (typeof a.distance === 'number') return -1;
-          if (typeof b.distance === 'number') return 1;
-          return 0;
-        });
-
-        nearbyEvents = nearbyEvents.slice(0, 15);
-        console.log(`[CultureAPI] 최종 매칭된 문화행사 수 (${targetLabel}):`, nearbyEvents.length);
       } catch (err) {
-        console.warn('문화행사 API 기반 반경 필터링 실패:', err.message);
+        console.warn('서울시 문화행사 API 기반 반경 필터링 실패:', err.message);
       }
+
+      let kcisaNearbyCandidates = [];
+      try {
+        kcisaNearbyCandidates = await fetchKcisaCultureEvents({
+          apiKey: KCISA_CULTURE_API_KEY,
+          gu,
+          today: todayStr
+        });
+      } catch (err) {
+        console.warn('한국문화정보원 문화행사 API 기반 반경 필터링 실패:', err.message);
+      }
+
+      const nearbyEvents = mergeCultureEvents(seoulNearbyCandidates, kcisaNearbyCandidates)
+        .filter(eventItem => isSeoulCoordinate(eventItem.lat, eventItem.lng))
+        .map(eventItem => ({
+          ...eventItem,
+          distance: Math.round(haversine(targetInfo.lat, targetInfo.lng, eventItem.lat, eventItem.lng))
+        }))
+        .filter(eventItem => eventItem.distance <= 2000)
+        .sort((a, b) => a.distance - b.distance || String(a.startDate).localeCompare(String(b.startDate)))
+        .slice(0, 15);
+      const nearbyEventSources = {
+        seoul: nearbyEvents.filter(eventItem => eventItem.source.includes('seoul')).length,
+        kcisa: nearbyEvents.filter(eventItem => eventItem.source.includes('kcisa')).length
+      };
+      console.log(`[CultureAPI] 최종 매칭된 문화행사 수 (${targetLabel}, 2km):`, nearbyEvents.length);
 
       const responseData = {
         library: targetInfo.name,
@@ -1538,7 +1828,8 @@ exports.handler = async (event, context) => {
         },
         infrastructure: {
           publicPlaces,
-          nearbyEvents
+          nearbyEvents,
+          nearbyEventSources
         }
       };
 
