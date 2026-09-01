@@ -289,7 +289,7 @@ function looksLikeEvidenceMeaningPair(text) {
 }
 
 function hasInternalInstructionLeak(text) {
-  return /고정\s*값|갱신\s*값|기준\s*차이|원인\s*단정|단정|분리\s*해석|유의|주의|fixed_dataset|api_cached|fallback|snapshot|reference_date|time slot|outreach segment|mismatch|access gap|coordination burden|complementarity|캐시/i.test(String(text || ''));
+  return /고정\s*값|갱신\s*값|기준\s*차이|원인\s*단정|단정|분리\s*해석|별도\s*(?:통계)?\s*축|내부\s*기준|직접\s*비교\s*(?:불가|어려)|유의|주의|fixed_dataset|api_cached|fallback|snapshot|reference_date|time slot|outreach segment|mismatch|access gap|coordination burden|complementarity|캐시/i.test(String(text || ''));
 }
 
 function looksGenericOperationalAdvice(text) {
@@ -765,6 +765,7 @@ function buildDistrictReportNarrativePrompt({ basePayload = {}, interpretations 
     '- cautions는 기준시점·자료 계보·운영데이터 부재처럼 해석 범위를 제한하는 내용만 작성.',
     '- 단독 근거 아님, 원인 단정 금지, 개인 수요 추론 금지, 기준 차이, 정책 우열 금지 같은 안전·방법론 문장은 해당 주제 본문에 쓰지 않고 cautions에만 작성.',
     '- socialSafety 본문에는 안전 규칙을 설명하지 말고 실제 입력에서 드러나는 가구·장애·외국인 구성과 접근 조건의 특이점만 작성.',
+    '- 외국인 주민 유형과 등록외국인 국적은 서로 합산하지 않되, “별도 통계축”, “내부 기준”, “분리해 해석”, “직접 비교 불가” 같은 처리 원칙을 본문에 설명하지 않음.',
     '- “확인 필요”, “검토 필요”, “강화 필요” 같은 일반론과 “분석했다”, “살펴봤다” 같은 작업 보고형 표현 금지.',
     '- 내부 생성·캐시·프롬프트 용어 금지.',
     '- 반환값은 reportNarrative 객체 하나를 포함한 JSON 객체만 사용.',
@@ -1084,7 +1085,7 @@ function moveReportMethodCautions(reportNarrative = {}) {
     'socialSafety',
     'libraryImplications'
   ];
-  const cautionPattern = /단독 근거|원인.{0,8}단정|단정.{0,8}(금지|않)|개인.{0,8}(수요|추론)|추론.{0,8}(금지|않)|기준(?:연도|월|일| 차이)|산정 (?:목적|기준)|자료 계보|해석 범위|정책 우열|내부 (?:생성|캐시|프롬프트)/;
+  const cautionPattern = /단독 근거|원인.{0,8}단정|단정.{0,8}(금지|않)|개인.{0,8}(수요|추론)|추론.{0,8}(금지|않)|기준(?:연도|월|일| 차이)|산정 (?:목적|기준)|자료 계보|해석 범위|정책 우열|내부 (?:생성|캐시|프롬프트|기준)|별도\s*(?:통계)?\s*축|통계\s*축.{0,12}(분리|구분)|분리(?:해|하여|해서)?\s*해석|직접\s*비교.{0,8}(불가|어려)/;
   const movedCautions = [];
   const sanitized = { ...reportNarrative };
 

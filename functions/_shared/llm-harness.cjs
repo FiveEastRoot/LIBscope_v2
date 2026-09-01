@@ -264,7 +264,7 @@ function buildAnalysisBasis(analysisSignals, sectionKey) {
 function sanitizeInsightBullet(text) {
   return String(text || '')
     .replace(/고정\s*값|갱신\s*값|fixed_dataset|api_cached|fallback|캐시|snapshot|reference_date/gi, '자료 기준')
-    .replace(/원인\s*단정|단정|분리\s*해석|기준\s*차이|유의|주의/gi, '')
+    .replace(/원인\s*단정|단정|분리\s*해석|별도\s*(?:통계)?\s*축|내부\s*기준|직접\s*비교\s*(?:불가|어려)|기준\s*차이|유의|주의/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -521,8 +521,7 @@ function buildMetricInterpretations({ districtData = {}, cultureMetrics = {}, an
       summary: `${gu}의 가구, 장애, 외국인, 수급률 지표를 접근성 관점에서 묶은 해석.`,
       keyFindings: socialFindings,
       cautions: [
-        '대상자 구성은 서비스 접근성 점검을 위한 참고값이며 개인 단위 수요를 직접 추론하지 않음.',
-        '외국인 주민 유형과 등록외국인 국적은 통계 기준이 다를 수 있어 별도 축으로 유지.'
+        '대상자 구성은 서비스 접근성 점검을 위한 참고값이며 개인 단위 수요를 직접 추론하지 않음.'
       ],
       evidenceRefs: buildEvidenceRefs('socialSafety', socialFindings),
       analysisBasis: buildAnalysisBasis(analysisSignals, 'socialSafety'),

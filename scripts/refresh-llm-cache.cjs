@@ -15,6 +15,7 @@ const QUALITY_RETRIES = process.env.LLM_REFRESH_QUALITY_RETRIES === '1' ? 1 : 0;
 const SOURCE_FORCE_REFRESH = process.env.LLM_SOURCE_FORCE_REFRESH === '1';
 const DISTRICT_CACHE_VERSION = process.env.LLM_DISTRICT_CACHE_VERSION || 'culture-events-kcisa-v7';
 const LIMIT = Math.max(0, parseInt(process.env.LLM_REFRESH_LIMIT || '0', 10));
+const INTERNAL_NARRATIVE_PATTERN = /별도\s*(?:통계)?\s*축|내부\s*기준|분리(?:해|하여|해서)?\s*해석|직접\s*비교.{0,8}(?:불가|어려)/i;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -103,6 +104,13 @@ async function refreshDistrictLlmCache(gu) {
   });
 
   const payload = response.data || {};
+  const visibleNarrative = [
+    ...(payload.report?.sections || []).map(section => section?.body),
+    ...(payload.insight?.cards || []).flatMap(card => [card?.text, ...(card?.bullets || [])])
+  ].filter(Boolean).join('\n');
+  if (INTERNAL_NARRATIVE_PATTERN.test(visibleNarrative)) {
+    throw new Error('visible_internal_analysis_language');
+  }
   const cacheStatus = payload.cacheStatus || {};
   if (payload.fallbackReason) {
     throw new Error(payload.aiMeta?.error || payload.fallbackReason);

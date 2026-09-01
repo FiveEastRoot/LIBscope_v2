@@ -37,7 +37,7 @@ const {
 
 const SECTION_PROMPT_VERSION = 'district-section-interpretation-v1.0';
 const INSIGHT_PROMPT_VERSION = 'district-summary-insight-v0.5';
-const REPORT_NARRATIVE_PROMPT_VERSION = 'district-report-core-interpretation-v1.3';
+const REPORT_NARRATIVE_PROMPT_VERSION = 'district-report-core-interpretation-v1.4';
 const PROMPT_VERSION = `${SECTION_PROMPT_VERSION}+${INSIGHT_PROMPT_VERSION}+${REPORT_NARRATIVE_PROMPT_VERSION}`;
 const SECTION_CACHE_KEYS = ['population', 'culture', 'education', 'socialSafety'];
 
@@ -118,7 +118,7 @@ function validateGeneratedInsightCards(generatedText = {}) {
   }
 
   const leakedInstruction = normalized.find(card => card.bullets.some(bullet => (
-    /고정\s*값|갱신\s*값|기준\s*차이|원인\s*단정|단정|분리\s*해석|유의|주의|fixed_dataset|api_cached|fallback|snapshot|reference_date|캐시/i.test(bullet)
+    /고정\s*값|갱신\s*값|기준\s*차이|원인\s*단정|단정|분리\s*해석|별도\s*(?:통계)?\s*축|내부\s*기준|직접\s*비교\s*(?:불가|어려)|유의|주의|fixed_dataset|api_cached|fallback|snapshot|reference_date|캐시/i.test(bullet)
   )));
   if (leakedInstruction) {
     return { ok: false, reason: 'insight.cards 불릿에 내부 판단 지침 노출' };
