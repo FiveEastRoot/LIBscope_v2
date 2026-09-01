@@ -163,10 +163,19 @@ async function evaluate(client, expression, returnByValue = true) {
   return result.result?.value;
 }
 
-async function waitForReady(client) {
+async function openPopulationSection(client) {
   const started = Date.now();
   while (Date.now() - started < 30000) {
-    const ready = await evaluate(client, `document.readyState === 'complete' && document.body && document.body.innerText.includes('연령대별 인구 분포')`);
+    const ready = await evaluate(client, `
+      (() => {
+        if (document.readyState !== 'complete' || !document.body) return false;
+        if (document.body.innerText.includes('연령대별 인구 분포')) return true;
+        const button = [...document.querySelectorAll('button[role="tab"]')]
+          .find(el => el.textContent?.trim() === '인구');
+        if (button?.getAttribute('aria-selected') !== 'true') button?.click();
+        return false;
+      })()
+    `);
     if (ready) return;
     await wait(500);
   }
@@ -184,7 +193,7 @@ async function run() {
     await client.send('Log.enable');
     await client.send('Page.setViewport', {}).catch(() => {});
     await client.send('Page.navigate', { url: TARGET_URL });
-    await waitForReady(client);
+    await openPopulationSection(client);
     await wait(2500);
 
     await evaluate(client, `
