@@ -132,7 +132,8 @@ npm run notion:create -- --title "데이터 API 전환 매핑" --file docs/api-s
 - `node scripts/refresh-resident-population.cjs --dry-run`: KOSIS 최신 월자료의 25개 자치구와 현행 행정동 합계·성별·연령 검증
 - `node scripts/refresh-resident-population.cjs`: 과거 월자료를 보존하며 새 월자료를 추가하고 DB 재조회 검증
 - `node scripts/test-monthly-report.cjs`: 한국 시간 월 경계, 행사·월 변경, 이전 보고서 재생성 회귀 검사
-- 월간 workflow에는 `KOSIS_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. AI 키는 배포 함수의 기존 서버 환경변수를 사용합니다.
+- 월간 workflow에는 `KOSIS_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DIRECT_OPENAI_API_KEY`가 필요합니다. 별도 AI 엔드포인트를 쓰면 `DIRECT_OPENAI_BASE_URL`도 설정합니다. 보고서는 GitHub 작업에서 직접 생성·저장한 후 배포 API로 다시 조회하여 검증합니다.
+- 도서관 인구 집계는 자치구와 행정동을 함께 식별하고 같은 기준월만 합산합니다. KOSIS의 `제` 표기와 용신동의 용두동·신설동 원천 단위를 대응시켜 조회 누락을 방지합니다.
 - 보고서의 대상월은 원천 통계 기준월과 구분합니다. 다운로드 파일명과 본문에 대상월을 포함하며, 과거 생성본은 이전 생성본으로 표시합니다.
 - 보고서 및 네 섹션 저장을 확인하기 전에는 생성 성공으로 처리하지 않습니다.
 - 함수 `/tmp` 캐시는 인스턴스별 임시 캐시이며 영구 보관소가 아닙니다. 월자료와 보고서는 Supabase에 저장합니다.
