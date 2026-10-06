@@ -34,6 +34,20 @@ async function main() {
   global.fetch = async () => new Response(JSON.stringify([makeRow('강남구', 10), makeRow('은평구', 20), makeRow('은평구', 30, '2026-05-01')]));
   const library = await fetchLibraryResidentPopulation(['신사동'], [{ gu: '은평구', dong: '신사동' }]);
   assert.equal(library.total, 20);
+  const namedRow = (gu, dong, count) => ({ ...makeRow(gu, count), dong });
+  global.fetch = async url => {
+    assert.match(decodeURIComponent(url), /홍제제1동/);
+    return new Response(JSON.stringify([
+      namedRow('서대문구', '홍제제1동', 15), namedRow('서대문구', '홍제1동', 99),
+      namedRow('동대문구', '용두동', 10), namedRow('동대문구', '신설동', 20),
+      namedRow('다른구', '신설동', 100)
+    ].filter(row => row.dong !== '홍제1동')));
+  };
+  const aliased = await fetchLibraryResidentPopulation(['홍제1동', '용신동'], [
+    { gu: '서대문구', dong: '홍제1동' }, { gu: '동대문구', dong: '용신동' }
+  ]);
+  assert.equal(aliased.total, 45);
+  assert.deepEqual(aliased.missingDongs, []);
   console.log('PASS: KST month boundary, month/event invalidation, cache metadata stability, stale fallback permits regeneration');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
