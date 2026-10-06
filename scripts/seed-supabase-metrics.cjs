@@ -217,7 +217,7 @@ async function fetchKosisJson(baseUrl, params) {
     }
   });
 
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(45000) });
   const text = await response.text();
   let data;
   try {

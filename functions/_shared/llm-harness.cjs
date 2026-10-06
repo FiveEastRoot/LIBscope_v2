@@ -171,7 +171,7 @@ function normalizeSnapshotValue(value) {
   if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value)
-        .sort(([a], [b]) => a.localeCompare(b))
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
         .map(([key, item]) => [key, normalizeSnapshotValue(item)])
     );
   }
@@ -235,13 +235,13 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
       schools,
       publicLibraryCount: districtData.cultureAndEducation?.publicLibraryCount,
       liveCultureEventsMonth: districtData.cultureAndEducation?.liveCultureEventsMonth,
-      cultureEvents: normalizeSnapshotValue((districtData.cultureAndEducation?.cultureEvents || []).map(event => ({ title: event.title, startDate: event.startDate, endDate: event.endDate, place: event.place })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
+      cultureEvents: normalizeSnapshotValue((districtData.cultureAndEducation?.cultureEvents || []).map(event => ({ title: event.title, startDate: event.startDate, endDate: event.endDate, place: event.place })).sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : JSON.stringify(a) > JSON.stringify(b) ? 1 : 0))
     },
     welfare: districtData.welfare
   };
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify(minimal))
+    .update(JSON.stringify(normalizeSnapshotValue(minimal)))
     .digest('hex')
     .slice(0, 16);
 }

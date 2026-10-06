@@ -11,6 +11,9 @@ async function main() {
   assert.notEqual(key, buildSnapshotKey({ ...base, reportMonth: '2026-11' }));
   assert.notEqual(key, buildSnapshotKey({ ...base, cultureAndEducation: { liveCultureEventsMonth: 4 } }));
   assert.equal(key, buildSnapshotKey({ ...base, _cache: { fetchedAt: 'different' } }));
+  const first = { ...base, population: { total: 3, ageDistribution: { '5-9세': 2, '0-4세': 1 } } };
+  const reordered = { ...base, population: { ageDistribution: { '0-4세': 1, '5-9세': 2 }, total: 3 } };
+  assert.equal(buildSnapshotKey(first), buildSnapshotKey(reordered));
   process.env.SUPABASE_URL = 'https://unit-test.invalid';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only';
   let count = 0;
