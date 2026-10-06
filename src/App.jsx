@@ -246,6 +246,7 @@ function App() {
   const [addressSearching, setAddressSearching] = useState(false);
   const [addressError, setAddressError] = useState(null);
   const libraryTargetModeRef = useRef('library');
+  const sourceRequestRef = useRef(null);
   const [socialSafetyView, setSocialSafetyView] = useState('household');
   const [cultureReferenceView, setCultureReferenceView] = useState('general');
   const [educationCategory, setEducationCategory] = useState('elementary');
@@ -310,48 +311,64 @@ function App() {
 
   // 자치구별 대시보드 데이터 조회
   const fetchDistrictData = async (guName) => {
+    setDistrictData(null);
+    sourceRequestRef.current?.abort();
+    const controller = new AbortController();
+    sourceRequestRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const res = await axios.get(`/api/insight-api`, {
-        params: { type: 'district', gu: guName, cacheVersion: 'culture-events-kcisa-v7' }
+        params: { type: 'district', gu: guName, cacheVersion: 'culture-events-kcisa-v7' },
+        signal: controller.signal
       });
+      if (sourceRequestRef.current !== controller) return;
       setDistrictData(res.data);
     } catch (err) {
+      if (axios.isCancel(err) || sourceRequestRef.current !== controller) return;
       console.error(err);
       setError('자치구 데이터를 불러오는 데 실패했습니다.');
     } finally {
-      setLoading(false);
+      if (sourceRequestRef.current === controller) setLoading(false);
     }
   };
 
   // 개별 도서관 대시보드 데이터 조회
   const fetchLibraryData = async (guName, libName) => {
     if (!libName) return;
+    sourceRequestRef.current?.abort();
+    const controller = new AbortController();
+    sourceRequestRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const res = await axios.get(`/api/insight-api`, {
-        params: { type: 'library', gu: guName, library: libName, cacheVersion: 'nearby-events-dual-source-v2' }
+        params: { type: 'library', gu: guName, library: libName, cacheVersion: 'nearby-events-dual-source-v2' },
+        signal: controller.signal
       });
-      if (libraryTargetModeRef.current !== 'library') return;
+      if (sourceRequestRef.current !== controller || libraryTargetModeRef.current !== 'library') return;
       setLibraryDataDetail(res.data);
     } catch (err) {
+      if (axios.isCancel(err) || sourceRequestRef.current !== controller) return;
       console.error(err);
       setError('도서관 데이터를 불러오는 데 실패했습니다.');
     } finally {
-      setLoading(false);
+      if (sourceRequestRef.current === controller) setLoading(false);
     }
   };
 
   const fetchLocationData = async ({ guName, lat, lng, address }) => {
+    sourceRequestRef.current?.abort();
+    const controller = new AbortController();
+    sourceRequestRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const res = await axios.get(`/api/insight-api`, {
-        params: { type: 'location', gu: guName, lat, lng, cacheVersion: 'nearby-events-dual-source-v2' }
+        params: { type: 'location', gu: guName, lat, lng, cacheVersion: 'nearby-events-dual-source-v2' },
+        signal: controller.signal
       });
-      if (libraryTargetModeRef.current !== 'address') return;
+      if (sourceRequestRef.current !== controller || libraryTargetModeRef.current !== 'address') return;
       setLibraryDataDetail({
         ...res.data,
         address,
@@ -359,10 +376,11 @@ function App() {
       });
       setResolvedAddress(address);
     } catch (err) {
+      if (axios.isCancel(err) || sourceRequestRef.current !== controller) return;
       console.error(err);
       setError(err.response?.data?.error || '입력 위치 데이터를 불러오는 데 실패했습니다.');
     } finally {
-      setLoading(false);
+      if (sourceRequestRef.current === controller) setLoading(false);
     }
   };
 
@@ -403,6 +421,7 @@ function App() {
   };
 
   const changeLibraryTargetMode = (mode) => {
+    sourceRequestRef.current?.abort();
     libraryTargetModeRef.current = mode;
     setLibraryTargetMode(mode);
     setLoading(false);
