@@ -224,7 +224,7 @@ async function fetchDistrictResidentPopulation(gu) {
 }
 
 function sourceDongNames(dong) {
-  const names = [dong, dong.replace(/(\d)/, '제$1')];
+  const names = [dong, dong.replace(/(\d+(?:[.·ㆍ]\d+)*)(동)$/, '제$1$2')];
   if (dong === '용신동') names.push('용두동', '신설동');
   return [...new Set(names)];
 }

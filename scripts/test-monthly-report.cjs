@@ -37,16 +37,20 @@ async function main() {
   const namedRow = (gu, dong, count) => ({ ...makeRow(gu, count), dong });
   global.fetch = async url => {
     assert.match(decodeURIComponent(url), /홍제제1동/);
+    assert.match(decodeURIComponent(url), /성수1가제1동/);
+    assert.match(decodeURIComponent(url), /면목제3.8동/);
     return new Response(JSON.stringify([
       namedRow('서대문구', '홍제제1동', 15), namedRow('서대문구', '홍제1동', 99),
       namedRow('동대문구', '용두동', 10), namedRow('동대문구', '신설동', 20),
+      namedRow('성동구', '성수1가제1동', 5),
+      namedRow('중랑구', '면목제3.8동', 7),
       namedRow('다른구', '신설동', 100)
     ].filter(row => row.dong !== '홍제1동')));
   };
-  const aliased = await fetchLibraryResidentPopulation(['홍제1동', '용신동'], [
-    { gu: '서대문구', dong: '홍제1동' }, { gu: '동대문구', dong: '용신동' }
+  const aliased = await fetchLibraryResidentPopulation(['홍제1동', '용신동', '성수1가1동', '면목3.8동'], [
+    { gu: '서대문구', dong: '홍제1동' }, { gu: '동대문구', dong: '용신동' }, { gu: '성동구', dong: '성수1가1동' }, { gu: '중랑구', dong: '면목3.8동' }
   ]);
-  assert.equal(aliased.total, 45);
+  assert.equal(aliased.total, 57);
   assert.deepEqual(aliased.missingDongs, []);
   console.log('PASS: KST month boundary, month/event invalidation, cache metadata stability, stale fallback permits regeneration');
 }
