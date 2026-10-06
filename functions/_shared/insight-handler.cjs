@@ -46,9 +46,9 @@ const axios = {
   }
 };
 
-const INSIGHT_CACHE_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 월간 갱신 사이 캐시 유지
+const INSIGHT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 동적 행사 데이터는 하루 단위로 갱신
 const INSIGHT_CACHE_FILE = '/tmp/insight-api-cache.json';
-const INSIGHT_CACHE_VERSION = 'v8';
+const INSIGHT_CACHE_VERSION = 'v9';
 const memoryCache = new Map();
 let livingPopulationAvailableDate = null;
 let livingPopulationAvailabilityChecked = false;

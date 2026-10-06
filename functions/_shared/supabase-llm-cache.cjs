@@ -1,4 +1,5 @@
-const DEFAULT_TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 15000;
+const { reportValidUntil } = require('./report-period.cjs');
 
 function stringifyForPostgres(value) {
   return JSON.stringify(value, (_key, item) => (
@@ -96,6 +97,7 @@ function buildDistrictInsightFilters({
     section_key: 'eq.districtInsight',
     generation_unit: 'eq.district_screen',
     source_snapshot_key: `eq.${sourceSnapshotKey}`,
+    or: `(valid_until.is.null,valid_until.gt.${new Date().toISOString()})`,
     harness_version: `eq.${harnessVersion}`,
     prompt_version: `eq.${promptVersion}`,
     model_registry_version: `eq.${modelRegistryVersion}`,
@@ -143,6 +145,7 @@ function buildSectionFilters({
     section_key: sectionKey ? `eq.${sectionKey}` : undefined,
     generation_unit: 'eq.metric_interpretation',
     source_snapshot_key: `eq.${sourceSnapshotKey}`,
+    or: `(valid_until.is.null,valid_until.gt.${new Date().toISOString()})`,
     harness_version: `eq.${harnessVersion}`,
     prompt_version: `eq.${promptVersion}`,
     model_registry_version: `eq.${modelRegistryVersion}`,
@@ -254,7 +257,8 @@ async function fetchCachedDistrictInsight(params) {
         payload: withCacheStatus(latestRow.output_payload, {
           hit: true,
           available: true,
-          canGenerate: false,
+          canGenerate: true,
+          stale: true,
           reason: 'latest_gu_cache_hit_snapshot_mismatch',
           requestedSnapshotKey: params.sourceSnapshotKey,
           cachedSnapshotKey: latestRow.source_snapshot_key,
@@ -453,7 +457,7 @@ async function saveCachedDistrictInsight({
     token_usage: aiMeta.tokenUsage || {},
     cost_estimate_usd: aiMeta.costEstimateUsd ?? null,
     generated_at: generatedAt,
-    valid_until: null,
+    valid_until: reportValidUntil(payload.reportMonth),
     archived_at: null
   };
 
@@ -559,7 +563,7 @@ async function saveCachedSectionInterpretations({
       token_usage: aiMeta.tokenUsage || {},
       cost_estimate_usd: aiMeta.costEstimateUsd ?? null,
       generated_at: generatedAt,
-      valid_until: null,
+      valid_until: reportValidUntil(payload.reportMonth),
       archived_at: null
     };
     const filters = buildSectionFilters({

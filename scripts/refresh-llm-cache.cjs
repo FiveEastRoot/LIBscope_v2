@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { currentReportMonth } = require('../functions/_shared/report-period.cjs');
 const path = require('path');
 const axios = require('axios');
 
@@ -84,7 +85,7 @@ async function fetchDistrictData(gu) {
     },
     timeout: 45000
   });
-  return response.data;
+  return { ...response.data, reportMonth: currentReportMonth() };
 }
 
 async function refreshDistrictLlmCache(gu) {
@@ -121,8 +122,14 @@ async function refreshDistrictLlmCache(gu) {
       reason: cacheStatus.reason || 'cache_miss'
     };
   }
+  if (cacheStatus.stale || cacheStatus.reason === 'latest_gu_cache_hit_snapshot_mismatch' || payload.reportMonth !== currentReportMonth()) {
+    throw new Error('Report is stale or from a different month');
+  }
   if (!cacheStatus.hit) {
     throw new Error(cacheStatus.error || cacheStatus.reason || 'llm_cache_not_saved');
+  }
+  if (!payload.sectionCacheStatus?.complete || (payload.sectionCacheStatus.staleSectionKeys || []).length) {
+    throw new Error('Monthly report sections were not completely persisted');
   }
   const insightQuality = payload.aiMeta?.insightQuality;
   if (INSIGHT_ONLY && insightQuality && !insightQuality.screenCardPassed) {

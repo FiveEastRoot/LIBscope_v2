@@ -195,6 +195,21 @@ async function fetchDistrictResidentPopulation(gu) {
   const summary = rowsToPopulationSummary(rows, 'supabase_resident_population');
   if (!summary) return null;
 
+  const baselineRows = await supabaseFetch('district_metrics', {
+    select: 'gu,metric_value,metric_json,reference_date',
+    metric_key: 'eq.resident_population_age_gender',
+    population_mode: 'eq.resident',
+    reference_date: `eq.${summary.referenceDate}`
+  }).catch(() => []);
+  if (baselineRows.length === 25 && new Set(baselineRows.map(row => row.gu)).size === 25) {
+    summary.comparisonBaseline = baselineRows.map(row => ({
+      gu: row.gu,
+      total: Number(row.metric_value),
+      ageDistribution: row.metric_json.ageDistribution,
+      referenceDate: row.reference_date
+    })).sort((a, b) => a.gu.localeCompare(b.gu, 'ko'));
+  }
+
   const dongRows = await supabaseFetch('dong_metrics', {
     select: 'dong,metric_value,metric_json,reference_date',
     gu: `eq.${gu}`,

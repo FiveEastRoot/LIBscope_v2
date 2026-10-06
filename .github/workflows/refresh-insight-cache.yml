@@ -19,6 +19,14 @@ jobs:
       INSIGHT_REFRESH_MAX_ATTEMPTS: 3
       INSIGHT_REFRESH_RETRY_DELAY_MS: 1500
       INSIGHT_INCLUDE_CACHE_META: 0
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      LLM_HARNESS_BASE_URL: ${{ secrets.LLM_HARNESS_BASE_URL || 'https://libscope2.netlify.app/api/llm-harness' }}
+      LLM_REFRESH_PROVIDER: direct-openai
+      LLM_SOURCE_FORCE_REFRESH: 0
+      LLM_REFRESH_CONCURRENCY: 2
+      LLM_REFRESH_QUALITY_RETRIES: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,5 +48,13 @@ jobs:
           fi
           echo "Using insight API base URL: $INSIGHT_API_BASE_URL"
 
+      - name: Ingest and verify latest resident population
+        run: |
+          node scripts/test-monthly-report.cjs
+          node scripts/refresh-resident-population.cjs
+
       - name: Refresh insight cache
         run: npm run refresh:insight-cache
+
+      - name: Generate and verify current month reports
+        run: npm run refresh:llm-cache

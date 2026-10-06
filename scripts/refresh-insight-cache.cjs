@@ -87,7 +87,7 @@ async function main() {
     guList.forEach(gu => {
       targets.push({
         label: `district:${gu}`,
-        params: { type: 'district', gu }
+        params: { type: 'district', gu, cacheVersion: 'culture-events-kcisa-v7' }
       });
     });
   }
@@ -96,7 +96,7 @@ async function main() {
     mapping.libraries.forEach(item => {
       targets.push({
         label: `library:${item.gu}/${item.name}`,
-        params: { type: 'library', gu: item.gu, library: item.name }
+        params: { type: 'library', gu: item.gu, library: item.name, cacheVersion: 'nearby-events-dual-source-v2' }
       });
     });
   }

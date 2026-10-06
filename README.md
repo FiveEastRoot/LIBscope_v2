@@ -11,19 +11,19 @@ Netlify Function(`/api/insight-api`)을 중심으로 동작하며, 가능한 데
 - API 호출 결과는 캐시로 보관
   - `type=district` / `type=library` 요청 시 동일 쿼리에 대한 캐시 히트 시 즉시 반환
   - 캐시는 메모리 + `/tmp/insight-api-cache.json` 영속파일로 관리
-  - TTL: 7일
+  - TTL: 1일 (행사 변동 반영)
 - Netlify가 제공하지 않는 데이터는 정적 데이터로 즉시 fallback
 - `SUPABASE_URL`과 서버 키가 있으면 주민등록인구/수급 지표는 Supabase Postgres를 우선 조회
-- 주 1회 배치로 백엔드(함수) 캐시를 사전 갱신
+- 매월 KOSIS 원천 적재 → 조회 갱신 → 월간 AI 보고서 생성·저장 검증
 
 ### 갱신 흐름
 
 1. 사용자가 프런트에서 API 호출
 2. 캐시 HIT면 즉시 반환
 3. MISS면 실시간 API 시도
-4. Supabase에 주간 적재된 주민등록인구/수급 지표가 있으면 우선 사용
+4. Supabase에 월간 적재된 주민등록인구/수급 지표가 있으면 우선 사용
 5. 실시간 API나 Supabase 조회가 실패하면 정적 CSV/JSON fallback
-6. 응답을 7일 TTL로 캐싱
+6. 응답을 1일 TTL로 캐싱
 7. GitHub Actions가 주간으로 사전 `forceRefresh` 수행
 
 ## 사용 가능한 API 파라미터
@@ -69,7 +69,7 @@ npm run build:function-data
 
 실운영에서는 Netlify Function 로그에서 응답 코드 500 직전 에러 스택을 우선 확인하세요.
 
-## 주간 갱신(운영) 실행
+## 월간 갱신(운영) 실행
 
 - 로컬:  
   `npm run refresh:insight-cache`
@@ -78,7 +78,7 @@ npm run build:function-data
   - `npm run refresh:insight-cache:library`
 - GitHub Actions 워크플로우:
   - `.github/workflows/refresh-insight-cache.yml`
-  - 스케줄: 매주 일요일 03:00 KST (현재는 `0 18 * * 6` UTC)
+  - 스케줄: 매월 1일 09:00 KST. 최신 공개 주민등록인구를 적재하고 조회 및 보고서 생성까지 순차 실행
   - 필요 Secrets:
     - `INSIGHT_API_BASE_URL` (예: `https://your-site.netlify.app/api/insight-api`)
 
@@ -126,3 +126,13 @@ npm run notion:create -- --title "데이터 API 전환 매핑" --file docs/api-s
 ```
 
 `NOTION_TOKEN`은 서버/클라이언트 런타임에 필요하지 않은 문서화 자동화용 토큰이므로 Netlify 환경변수에는 넣지 않아도 됩니다.
+
+## 월간 복구 및 검증
+
+- `node scripts/refresh-resident-population.cjs --dry-run`: KOSIS 최신 월자료의 25개 자치구와 현행 행정동 합계·성별·연령 검증
+- `node scripts/refresh-resident-population.cjs`: 과거 월자료를 보존하며 새 월자료를 추가하고 DB 재조회 검증
+- `node scripts/test-monthly-report.cjs`: 한국 시간 월 경계, 행사·월 변경, 이전 보고서 재생성 회귀 검사
+- 월간 workflow에는 `KOSIS_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. AI 키는 배포 함수의 기존 서버 환경변수를 사용합니다.
+- 보고서의 대상월은 원천 통계 기준월과 구분합니다. 다운로드 파일명과 본문에 대상월을 포함하며, 과거 생성본은 이전 생성본으로 표시합니다.
+- 보고서 및 네 섹션 저장을 확인하기 전에는 생성 성공으로 처리하지 않습니다.
+- 함수 `/tmp` 캐시는 인스턴스별 임시 캐시이며 영구 보관소가 아닙니다. 월자료와 보고서는 Supabase에 저장합니다.

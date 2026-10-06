@@ -220,7 +220,7 @@ export default async function llmHarness(request) {
       modelRegistryVersion: MODEL_REGISTRY_VERSION
     });
 
-    if (cacheLookup.hit && !forceGenerate && regenerateSections.length === 0) {
+    if (cacheLookup.hit && !cacheLookup.staleSnapshot && !forceGenerate && regenerateSections.length === 0) {
       return jsonResponse(withSectionCacheStatus(cacheLookup.payload, {
         hit: sectionCacheLookup.hit,
         complete: sectionCacheLookup.complete,
@@ -233,6 +233,10 @@ export default async function llmHarness(request) {
         generatedAtBySection: sectionCacheLookup.generatedAtBySection || {},
         qualityBySection: sectionCacheLookup.qualityBySection || {}
       }));
+    }
+
+    if (requestedProvider === 'cache' && cacheLookup.staleSnapshot) {
+      return jsonResponse(withSectionCacheStatus(cacheLookup.payload, { ...sectionCacheLookup, interpretations: undefined }));
     }
 
     if (requestedProvider === 'cache') {
@@ -285,8 +289,9 @@ export default async function llmHarness(request) {
     });
 
     try {
-      const generationBasePayload = applyCachedInterpretations(basePayload, sectionCacheLookup.interpretations);
-      if (regenerateInsightOnly && !sectionCacheLookup.complete) {
+      const currentInterpretations = Object.fromEntries(Object.entries(sectionCacheLookup.interpretations || {}).filter(([key]) => !sectionCacheLookup.staleBySection?.[key]));
+      const generationBasePayload = applyCachedInterpretations(basePayload, currentInterpretations);
+      if (regenerateInsightOnly && (!sectionCacheLookup.complete || sectionCacheLookup.staleSectionKeys?.length)) {
         throw new Error('종합 카드만 재생성하려면 네 섹션 캐시가 모두 필요합니다.');
       }
       const generatedText = await generateDistrictScreenText({

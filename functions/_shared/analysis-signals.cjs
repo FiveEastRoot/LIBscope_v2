@@ -233,7 +233,10 @@ function getDataLineage(districtData = {}, cultureMetrics = {}) {
 
 function buildAnalysisSignals({ districtData = {}, cultureMetrics = {} } = {}) {
   const gu = districtData.gu || cultureMetrics.gu || '선택 자치구';
-  const populationBaseline = buildStaticPopulationBaseline();
+  const residentBaseline = getResidentPopulation(districtData).comparisonBaseline;
+  const populationBaseline = residentBaseline?.length === 25
+    ? residentBaseline.map(row => ({ gu: row.gu, ...populationRatesFromDistribution(row.ageDistribution, row.total) }))
+    : buildStaticPopulationBaseline();
   const cultureBaseline = parseCsv(getStaticCsv('district_culture_enjoyment_metrics.csv'));
   const socialBaseline = parseCsv(getStaticCsv('district_data_combined.csv'));
   const resident = getResidentPopulation(districtData);
@@ -250,7 +253,7 @@ function buildAnalysisSignals({ districtData = {}, cultureMetrics = {} } = {}) {
         baselineRows: populationBaseline,
         accessor: row => row.total,
         unit: '명',
-        sourceType: resident?.source?.includes('fallback') ? 'fixed_fallback_reference' : 'api_cached_current_static_baseline'
+        sourceType: residentBaseline?.length === 25 ? 'same_month_resident_population' : 'fixed_fallback_reference'
       }),
       compareMetric({
         key: 'child_rate',
@@ -259,7 +262,7 @@ function buildAnalysisSignals({ districtData = {}, cultureMetrics = {} } = {}) {
         baselineRows: populationBaseline,
         accessor: row => row.childRate,
         unit: '%',
-        sourceType: resident?.source?.includes('fallback') ? 'fixed_fallback_reference' : 'api_cached_current_static_baseline'
+        sourceType: residentBaseline?.length === 25 ? 'same_month_resident_population' : 'fixed_fallback_reference'
       }),
       compareMetric({
         key: 'senior_rate',
@@ -268,7 +271,7 @@ function buildAnalysisSignals({ districtData = {}, cultureMetrics = {} } = {}) {
         baselineRows: populationBaseline,
         accessor: row => row.seniorRate,
         unit: '%',
-        sourceType: resident?.source?.includes('fallback') ? 'fixed_fallback_reference' : 'api_cached_current_static_baseline'
+        sourceType: residentBaseline?.length === 25 ? 'same_month_resident_population' : 'fixed_fallback_reference'
       })
     ],
     culture: [

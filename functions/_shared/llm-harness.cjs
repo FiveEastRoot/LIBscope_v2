@@ -184,6 +184,8 @@ function normalizeSnapshotValue(value) {
   return value;
 }
 
+const { reportMonth } = require('./report-period.cjs');
+
 function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
   const {
     cultureEnjoymentReference2024: _staticCultureReference,
@@ -194,6 +196,7 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
   const social = districtData.socialIndicators || {};
   const schools = districtData.cultureAndEducation?.schools || {};
   const minimal = {
+    reportMonth: reportMonth(districtData.reportMonth),
     harnessVersion: HARNESS_VERSION,
     analysisSignalVersion: ANALYSIS_SIGNAL_VERSION,
     gu: districtData.gu,
@@ -204,7 +207,8 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
         source: resident?.source,
         referenceDate: resident?.referenceDate,
         ageDistribution: resident?.ageDistribution,
-        genderRatio: resident?.genderRatio
+        genderRatio: resident?.genderRatio,
+        comparisonBaseline: resident?.comparisonBaseline
       },
       // 생활인구는 공개 지연과 일시적 API 실패가 잦아 화면 보조지표로만 사용한다.
       // 기본 주민등록인구 스냅샷이 같으면 AI 캐시를 불필요하게 무효화하지 않는다.
@@ -229,7 +233,9 @@ function buildSnapshotKey(districtData = {}, cultureMetrics = {}) {
     cultureMetrics: normalizeSnapshotValue(snapshotCultureMetrics),
     cultureAndEducation: {
       schools,
-      publicLibraryCount: districtData.cultureAndEducation?.publicLibraryCount
+      publicLibraryCount: districtData.cultureAndEducation?.publicLibraryCount,
+      liveCultureEventsMonth: districtData.cultureAndEducation?.liveCultureEventsMonth,
+      cultureEvents: normalizeSnapshotValue((districtData.cultureAndEducation?.cultureEvents || []).map(event => ({ title: event.title, startDate: event.startDate, endDate: event.endDate, place: event.place })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
     },
     welfare: districtData.welfare
   };
@@ -679,6 +685,7 @@ function buildDistrictReport({ districtData = {}, cultureMetrics = {}, interpret
 
   const markdown = [
     `# ${title}`,
+    `- 보고서 대상월: ${reportMonth(districtData.reportMonth)}`,
     '',
     `- 하네스 버전: ${HARNESS_VERSION}`,
     `- 추천 모델: ${formatModelRecommendation(MODEL_RECOMMENDATIONS.districtReport)}`,
@@ -697,6 +704,7 @@ function buildDistrictReport({ districtData = {}, cultureMetrics = {}, interpret
   const html = [
     `<article data-harness-version="${HARNESS_VERSION}">`,
     `<h1>${escapeHtml(title)}</h1>`,
+    `<p>보고서 대상월: ${reportMonth(districtData.reportMonth)}</p>`,
     ...sections.map(section => [
       '<section>',
       `<h2>${escapeHtml(section.heading)}</h2>`,
@@ -711,8 +719,9 @@ function buildDistrictReport({ districtData = {}, cultureMetrics = {}, interpret
 
   return {
     sectionKey: 'districtReport',
+    reportMonth: reportMonth(districtData.reportMonth),
     title,
-    subtitle: 'HTML/PDF/Markdown 변환을 전제로 한 자치구 인사이트 보고서 구조',
+    subtitle: `${reportMonth(districtData.reportMonth)} 월간 지역사회 인사이트 보고서`,
     modelRecommendation: MODEL_RECOMMENDATIONS.districtReport,
     outputStyle: OUTPUT_STYLE_GUIDE,
     sections,
@@ -761,6 +770,7 @@ function buildHarnessPayload({ districtData = {}, cultureMetrics = {} } = {}) {
     reportOutline: REPORT_OUTLINE,
     goldenTestDistricts: GOLDEN_TEST_DISTRICTS,
     modelRecommendations: MODEL_RECOMMENDATIONS,
+    reportMonth: reportMonth(districtData.reportMonth),
     snapshotKey: buildSnapshotKey(districtData, cultureMetrics),
     generatedAt: new Date().toISOString(),
     validationSummary,
@@ -861,6 +871,7 @@ function applyGeneratedReportNarrative(report = {}, reportNarrative = {}) {
 
   const markdown = [
     `# ${report.title}`,
+    `- 보고서 대상월: ${report.reportMonth}`,
     '',
     `- 하네스 버전: ${HARNESS_VERSION}`,
     `- 추천 모델: ${formatModelRecommendation(report.modelRecommendation)}`,
@@ -879,6 +890,7 @@ function applyGeneratedReportNarrative(report = {}, reportNarrative = {}) {
   const html = [
     `<article data-harness-version="${HARNESS_VERSION}">`,
     `<h1>${escapeHtml(report.title)}</h1>`,
+    `<p>보고서 대상월: ${escapeHtml(report.reportMonth)}</p>`,
     ...sections.map(section => [
       '<section>',
       `<h2>${escapeHtml(section.heading)}</h2>`,
