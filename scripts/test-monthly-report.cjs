@@ -28,6 +28,12 @@ async function main() {
   assert.equal(cached.staleSnapshot, true);
   assert.equal(cached.payload.cacheStatus.canGenerate, true);
   assert.equal(cached.payload.cacheStatus.stale, true);
+  const { fetchLibraryResidentPopulation } = require('../functions/_shared/supabase-metrics.cjs');
+  const makeRow = (gu, count, date = '2026-09-01') => ({ gu, dong: '신사동', metric_value: count, reference_date: date,
+    metric_json: { total: count, genderRatio: { male: count, female: 0 }, ageDistribution: { '0-4세': count } } });
+  global.fetch = async () => new Response(JSON.stringify([makeRow('강남구', 10), makeRow('은평구', 20), makeRow('은평구', 30, '2026-05-01')]));
+  const library = await fetchLibraryResidentPopulation(['신사동'], [{ gu: '은평구', dong: '신사동' }]);
+  assert.equal(library.total, 20);
   console.log('PASS: KST month boundary, month/event invalidation, cache metadata stability, stale fallback permits regeneration');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

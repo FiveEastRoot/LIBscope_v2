@@ -223,11 +223,17 @@ async function fetchDistrictResidentPopulation(gu) {
   return summary;
 }
 
-async function fetchLibraryResidentPopulation(dongs = []) {
+function filterAreaRows(rows, dongAreas = []) {
+  if (!dongAreas.length) return rows || [];
+  const areas = new Set(dongAreas.map(area => `${area.gu}:${area.dong}`));
+  return (rows || []).filter(row => areas.has(`${row.gu}:${row.dong}`));
+}
+
+async function fetchLibraryResidentPopulation(dongs = [], dongAreas = []) {
   if (!dongs.length) return null;
   const quoted = dongs.map(dong => `"${String(dong).replace(/"/g, '\\"')}"`).join(',');
   const rows = await supabaseFetch('dong_metrics', {
-    select: 'dong,metric_value,metric_json,reference_date',
+    select: 'gu,dong,metric_value,metric_json,reference_date',
     dong: `in.(${quoted})`,
     metric_key: 'eq.resident_population_age_gender',
     population_mode: 'eq.resident',
@@ -235,13 +241,16 @@ async function fetchLibraryResidentPopulation(dongs = []) {
   });
 
   const latestByDong = new Map();
-  (rows || []).forEach(row => {
-    if (!latestByDong.has(row.dong)) latestByDong.set(row.dong, row);
+  const areaRows = filterAreaRows(rows, dongAreas);
+  const latestDate = areaRows.map(row => row.reference_date).filter(Boolean).sort().at(-1);
+  areaRows.filter(row => row.reference_date === latestDate).forEach(row => {
+    const key = `${row.gu}:${row.dong}`;
+    if (!latestByDong.has(key)) latestByDong.set(key, row);
   });
 
   const summary = rowsToPopulationSummary([...latestByDong.values()], 'supabase_resident_population');
   if (summary) {
-    summary.missingDongs = dongs.filter(dong => !latestByDong.has(dong));
+    summary.missingDongs = dongs.filter(dong => ![...latestByDong.values()].some(row => row.dong === dong));
   }
   return summary;
 }
@@ -296,11 +305,11 @@ async function fetchDistrictSocialIndicators(gu) {
   };
 }
 
-async function fetchLibraryWelfare(dongs = []) {
+async function fetchLibraryWelfare(dongs = [], dongAreas = []) {
   if (!dongs.length) return null;
   const quoted = dongs.map(dong => `"${String(dong).replace(/"/g, '\\"')}"`).join(',');
   const rows = await supabaseFetch('dong_metrics', {
-    select: 'dong,metric_value',
+    select: 'gu,dong,metric_value',
     dong: `in.(${quoted})`,
     metric_key: 'eq.welfare_recipients',
     order: 'reference_date.desc.nullslast,fetched_at.desc'
@@ -308,18 +317,20 @@ async function fetchLibraryWelfare(dongs = []) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
   const latestByDong = new Map();
-  rows.forEach(row => {
-    if (!latestByDong.has(row.dong)) latestByDong.set(row.dong, row);
+  filterAreaRows(rows, dongAreas).forEach(row => {
+    const key = `${row.gu}:${row.dong}`;
+    if (!latestByDong.has(key)) latestByDong.set(key, row);
   });
   const values = [...latestByDong.values()].map(row => Number(row.metric_value || 0));
   const allRows = await supabaseFetch('dong_metrics', {
-    select: 'dong,metric_value',
+    select: 'gu,dong,metric_value',
     metric_key: 'eq.welfare_recipients',
     order: 'reference_date.desc.nullslast,fetched_at.desc'
   });
   const latestAll = new Map();
   (allRows || []).forEach(row => {
-    if (!latestAll.has(row.dong)) latestAll.set(row.dong, row);
+    const key = `${row.gu}:${row.dong}`;
+    if (!latestAll.has(key)) latestAll.set(key, row);
   });
   const allValues = [...latestAll.values()].map(row => Number(row.metric_value || 0));
 

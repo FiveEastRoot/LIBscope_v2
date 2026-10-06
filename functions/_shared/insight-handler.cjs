@@ -48,7 +48,7 @@ const axios = {
 
 const INSIGHT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 동적 행사 데이터는 하루 단위로 갱신
 const INSIGHT_CACHE_FILE = '/tmp/insight-api-cache.json';
-const INSIGHT_CACHE_VERSION = 'v9';
+const INSIGHT_CACHE_VERSION = 'v10';
 const memoryCache = new Map();
 let livingPopulationAvailableDate = null;
 let livingPopulationAvailabilityChecked = false;
@@ -1681,7 +1681,7 @@ exports.handler = async (event, context) => {
       // 2) 행정동 인구 현황 집계: 주민등록인구 기본 + 생활인구 병행 사전 로드
       const residentPopulation = await withSupabaseFallback(
         `library resident population ${targetLabel}`,
-        () => supabaseMetrics.fetchLibraryResidentPopulation(dongs),
+        () => supabaseMetrics.fetchLibraryResidentPopulation(dongs, dongAreas),
         () => fetchResidentLibraryPopulationFromCsv({ dongs })
       );
       const livingPopulation = await fetchLiveDongPopulation({
@@ -1703,7 +1703,7 @@ exports.handler = async (event, context) => {
       const seoulAvgWelfare = welfareCSV.reduce((sum, r) => sum + parseInt(r['수급자수'] || 0), 0) / (welfareCSV.length || 1);
       const supabaseLibraryWelfare = await withSupabaseFallback(
         `library welfare ${targetLabel}`,
-        () => supabaseMetrics.fetchLibraryWelfare(dongs),
+        () => supabaseMetrics.fetchLibraryWelfare(dongs, dongAreas),
         () => null
       );
 
