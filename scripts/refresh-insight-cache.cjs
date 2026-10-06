@@ -38,6 +38,12 @@ async function refreshOne(url, item) {
         },
         timeout: REQUEST_TIMEOUT_MS
       });
+      const population = response.data.population?.modes?.resident || response.data.populationModes?.modes?.resident;
+      const date = population?.referenceDate;
+      if (!date || population.source?.includes('fallback') || !(population.total > 0)) throw new Error(`Missing resident source: ${item.label}`);
+      const current = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 7);
+      const lag = (Number(current.slice(0, 4)) - Number(date.slice(0, 4))) * 12 + Number(current.slice(5)) - Number(date.slice(5, 7));
+      if (lag < 0 || lag > 2 || population.missingDongs?.length) throw new Error(`Stale or incomplete resident source: ${item.label}, ${date}`);
       return response.data;
     } catch (err) {
       if (!isRetryableError(err) || attempt === MAX_ATTEMPTS) throw err;

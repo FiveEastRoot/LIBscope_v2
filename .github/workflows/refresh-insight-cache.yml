@@ -27,6 +27,9 @@ jobs:
       LLM_SOURCE_FORCE_REFRESH: 0
       LLM_REFRESH_CONCURRENCY: 2
       LLM_REFRESH_QUALITY_RETRIES: 1
+      DIRECT_OPENAI_API_KEY: ${{ secrets.DIRECT_OPENAI_API_KEY }}
+      DIRECT_OPENAI_BASE_URL: ${{ secrets.DIRECT_OPENAI_BASE_URL }}
+      LLM_REFRESH_EXECUTION: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4

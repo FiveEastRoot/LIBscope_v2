@@ -28,6 +28,11 @@ jobs:
       LLM_REFRESH_CONCURRENCY: 2
       LLM_REFRESH_SLEEP_MS: 750
       LLM_SOURCE_FORCE_REFRESH: 0
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      DIRECT_OPENAI_API_KEY: ${{ secrets.DIRECT_OPENAI_API_KEY }}
+      DIRECT_OPENAI_BASE_URL: ${{ secrets.DIRECT_OPENAI_BASE_URL }}
+      LLM_REFRESH_EXECUTION: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4

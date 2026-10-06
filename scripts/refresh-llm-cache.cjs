@@ -14,6 +14,7 @@ const FORCE_GENERATE = process.env.LLM_REFRESH_FORCE_GENERATE === '1';
 const INSIGHT_ONLY = process.env.LLM_REFRESH_INSIGHT_ONLY === '1';
 const QUALITY_RETRIES = process.env.LLM_REFRESH_QUALITY_RETRIES === '1' ? 1 : 0;
 const SOURCE_FORCE_REFRESH = process.env.LLM_SOURCE_FORCE_REFRESH === '1';
+const EXECUTION = process.env.LLM_REFRESH_EXECUTION || 'local';
 const DISTRICT_CACHE_VERSION = process.env.LLM_DISTRICT_CACHE_VERSION || 'culture-events-kcisa-v7';
 const LIMIT = Math.max(0, parseInt(process.env.LLM_REFRESH_LIMIT || '0', 10));
 const INTERNAL_NARRATIVE_PATTERN = /별도\s*(?:통계)?\s*축|내부\s*기준|분리(?:해|하여|해서)?\s*해석|직접\s*비교.{0,8}(?:불가|어려)/i;
@@ -91,7 +92,7 @@ async function fetchDistrictData(gu) {
 async function refreshDistrictLlmCache(gu) {
   const districtData = await fetchDistrictData(gu);
   const cultureMetrics = getCultureMetrics(gu);
-  const response = await axios.post(LLM_HARNESS_BASE_URL, {
+  const requestBody = {
     type: 'district_screen',
     provider: PROVIDER,
     model: MODEL || undefined,
@@ -100,9 +101,18 @@ async function refreshDistrictLlmCache(gu) {
     qualityRetries: QUALITY_RETRIES,
     districtData,
     cultureMetrics
-  }, {
-    timeout: 120000
-  });
+  };
+  let response;
+  if (EXECUTION === 'local') {
+    const { default: handler } = await import('../functions/llm-harness.js');
+    const result = await handler(new Request(LLM_HARNESS_BASE_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody)
+    }));
+    response = { data: await result.json() };
+    if (!result.ok) throw new Error(response.data.error || `Generation failed: ${result.status}`);
+  } else {
+    response = await axios.post(LLM_HARNESS_BASE_URL, requestBody, { timeout: 300000 });
+  }
 
   const payload = response.data || {};
   const visibleNarrative = [
@@ -131,6 +141,15 @@ async function refreshDistrictLlmCache(gu) {
   if (!payload.sectionCacheStatus?.complete || (payload.sectionCacheStatus.staleSectionKeys || []).length) {
     throw new Error('Monthly report sections were not completely persisted');
   }
+  // A saved result is only operationally complete when the deployed reader
+  // returns the same current-month snapshot and all four stored sections.
+  const readback = await axios.post(LLM_HARNESS_BASE_URL, {
+    ...requestBody, provider: 'cache', forceGenerate: false, regenerateInsightOnly: false
+  }, { timeout: 45000 });
+  const stored = readback.data;
+  if (!stored.cacheStatus?.hit || stored.cacheStatus.stale || stored.reportMonth !== currentReportMonth()
+    || stored.snapshotKey !== payload.snapshotKey || !stored.sectionCacheStatus?.complete
+    || stored.sectionCacheStatus.staleSectionKeys?.length) throw new Error('Deployed report readback failed');
   const insightQuality = payload.aiMeta?.insightQuality;
   if (INSIGHT_ONLY && insightQuality && !insightQuality.screenCardPassed) {
     throw new Error(`insight_quality_failed:${insightQuality.screenCardHardWarningCount || 0}`);
