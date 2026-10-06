@@ -275,6 +275,14 @@ function App() {
   const [llmHarness, setLlmHarness] = useState(null);
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState(null);
+  const [exportingData, setExportingData] = useState(false);
+  const [dataExportMessage, setDataExportMessage] = useState('');
+  const [dataExportError, setDataExportError] = useState('');
+
+  useEffect(() => {
+    setDataExportMessage('');
+    setDataExportError('');
+  }, [activeTab, selectedGu, selectedLibrary, libraryTargetMode, resolvedAddress]);
 
   // 지도 인스턴스 참조
   const mapContainerRef = useRef(null);
@@ -1188,6 +1196,36 @@ function App() {
     };
   }, [activeTab, districtData, selectedCultureMetrics]);
 
+  const dataExportScope = activeTab === 'district' ? 'district' : libraryTargetMode === 'address' ? 'address' : 'library';
+  const dataExportSource = activeTab === 'district' ? districtData : libraryDataDetail;
+  const dataMatchesSelection = dataExportSource?.gu === selectedGu && (dataExportScope === 'district'
+    || (dataExportScope === 'library' && dataExportSource?.library === selectedLibrary && dataExportSource?.targetType === 'library')
+    || (dataExportScope === 'address' && dataExportSource?.address === resolvedAddress && dataExportSource?.targetType === 'address'));
+  const downloadLabel = dataExportScope === 'district' ? '자치구 데이터 다운로드' : dataExportScope === 'address' ? '선택 주소지 데이터 다운로드' : '도서관 데이터 다운로드';
+  const downloadStatusData = async () => {
+    if (!dataMatchesSelection || loading || error || addressSearching || exportingData) return;
+    // Capture the selected screen before the lazy workbook library is loaded.
+    const options = { scope: dataExportScope, data: dataExportSource, cultureMetrics: selectedCultureMetrics,
+      cultureGroups: cultureMetricGroups, cultureReference: cultureEnjoymentAiReference2024, facilities: districtCultureFacilities,
+      report: activeTab === 'district' && !llmLoading ? llmHarness : null,
+      viewState: { populationMode, districtSectionTab, cultureEducationSubTab, cultureEventFilter, cultureEventCategory, cultureEventPage,
+        cultureFacilityCategory, cultureFacilityPage, educationCategory, educationPage, publicPlaceCategory, publicPlacePage, nearbyEventSourceFilter },
+      exportedAt: new Date() };
+    setExportingData(true);
+    setDataExportMessage('');
+    setDataExportError('');
+    try {
+      const { downloadAnalysisWorkbook } = await import('./utils/analysisExport');
+      const filename = await downloadAnalysisWorkbook(options);
+      setDataExportMessage(`${filename} 다운로드 완료`);
+    } catch (err) {
+      console.error('현황 데이터 다운로드 실패', err);
+      setDataExportError('다운로드 파일을 만들지 못했습니다. 다시 시도해 주세요.');
+    } finally {
+      setExportingData(false);
+    }
+  };
+
   const downloadDistrictReportMarkdown = () => {
     const markdown = llmHarness?.report?.markdown;
     if (!markdown) return;
@@ -1375,8 +1413,21 @@ function App() {
                 )}
               </div>
             )}
+            <button
+              type="button"
+              onClick={downloadStatusData}
+              disabled={!dataMatchesSelection || loading || Boolean(error) || addressSearching || exportingData}
+              title="전체 현황 데이터와 컬럼 정의·단위·출처·기준시점을 Excel 파일로 다운로드"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-sm font-extrabold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download size={16} />
+              {exportingData ? 'Excel 파일 만드는 중…' : downloadLabel}
+            </button>
+            <p className="text-xs font-medium text-slate-500">Excel · 전체 탭·목록과 컬럼 설명 포함</p>
           </div>
         </section>
+        {dataExportMessage && <p role="status" className="mb-4 break-all text-sm font-semibold text-emerald-700">{dataExportMessage}</p>}
+        {dataExportError && <p role="alert" className="mb-4 text-sm font-semibold text-rose-700">{dataExportError}</p>}
 
         {/* 로딩 및 에러 처리 */}
         {loading && (

@@ -23,6 +23,7 @@
     "seed:supabase": "node scripts/seed-supabase-metrics.cjs",
     "notion:create": "node scripts/notion-create-page.cjs",
     "verify:deploy-visuals": "node scripts/verify-deploy-visuals.cjs",
+    "test:analysis-export": "node scripts/test-analysis-export.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -30,6 +31,7 @@
     "axios": "^1.18.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
+    "exceljs": "4.4.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.17.0",
     "react": "^19.2.6",
